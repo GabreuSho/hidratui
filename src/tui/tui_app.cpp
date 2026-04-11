@@ -1,5 +1,19 @@
-#include "tui_app.h"
+#include "tui/tui_app.h"
+#include "tui/layout.h"
+#include "tui/panels/controls_panel.h"
+#include "tui/panels/memory_panel.h"
+#include "tui/panels/output_panel.h"
+#include "tui/panels/registers_panel.h"
 
+// ⚠️ Headers das máquinas concretas (obrigatório para std::make_unique)
+#include "machines/ahmesmachine.h"
+#include "machines/neandermachine.h"
+#include "machines/periclesmachine.h" // Se existir no seu projeto
+#include "machines/ramsesmachine.h"
+#include "machines/regmachine.h"
+#include "machines/voltamachine.h"
+
+#include <QString>
 #include <chrono>
 #include <fstream>
 #include <ftxui/component/component.hpp>
@@ -9,15 +23,9 @@
 #include <sstream>
 #include <thread>
 
-#include "layout.h"
-#include "panels/controls_panel.h"
-#include "panels/memory_panel.h"
-#include "panels/output_panel.h"
-#include "panels/registers_panel.h"
-
 using namespace ftxui;
 
-TuiApp::TuiApp(const std::string& machine_type) {
+TuiApp::TuiApp(const std::string &machine_type) : machine_type_(machine_type) {
   if (machine_type == "neander")
     machine_ = std::make_unique<NeanderMachine>();
   else if (machine_type == "ahmes")
@@ -28,6 +36,8 @@ TuiApp::TuiApp(const std::string& machine_type) {
     machine_ = std::make_unique<RegMachine>();
   else if (machine_type == "volta")
     machine_ = std::make_unique<VoltaMachine>();
+  else if (machine_type == "pericles")
+    machine_ = std::make_unique<PericlesMachine>();
   else
     throw std::runtime_error("Máquina não suportada: " + machine_type);
 
@@ -48,13 +58,16 @@ TuiApp::TuiApp(const std::string& machine_type) {
 
   layout_config_.show_hex = false;
   layout_config_.follow_pc = true;
+  layout_config_.registers_panel_width = 28;
+  layout_config_.output_panel_height = 5;
 }
 
 TuiApp::~TuiApp() {
-  if (file_monitor_) file_monitor_->stop();
+  if (file_monitor_)
+    file_monitor_->stop();
 }
 
-void TuiApp::load_file(const std::string& filepath) {
+void TuiApp::load_file(const std::string &filepath) {
   current_filepath_ = filepath;
   do_build();
   file_monitor_ = std::make_unique<FileMonitor>(filepath);
@@ -69,45 +82,64 @@ void TuiApp::on_file_changed() {
 
 void TuiApp::do_build() {
   std::ifstream file(current_filepath_);
-  if (!file) return;
+  if (!file) {
+    output_panel_.add_message("Arquivo não encontrado", true);
+    return;
+  }
   std::stringstream buffer;
   buffer << file.rdbuf();
-  machine_->assemble(buffer.str());
-  file_modified_ = false;
-  output_panel_.clear();
-  output_panel_.add_message(
-      machine_->getBuildSuccessful() ? "✓ Montagem OK" : "✗ Erro na montagem",
-      !machine_->getBuildSuccessful());
+
+  try {
+    machine_->assemble(QString::fromStdString(buffer.str()));
+    file_modified_ = false;
+    output_panel_.clear();
+    output_panel_.add_message("✓ Montagem OK", false);
+  } catch (const QString &e) {
+    output_panel_.clear();
+    output_panel_.add_message("✗ Erro: " + e.toStdString(), true);
+  } catch (const std::exception &e) {
+    output_panel_.clear();
+    output_panel_.add_message(std::string("✗ Erro: ") + e.what(), true);
+  } catch (...) {
+    output_panel_.clear();
+    output_panel_.add_message("✗ Erro desconhecido na montagem", true);
+  }
 }
 
 void TuiApp::do_step() {
-  if (!machine_->getBuildSuccessful()) return;
+  if (!machine_->getBuildSuccessful())
+    return;
   try {
     machine_->step();
-  } catch (const std::string& e) {
-    output_panel_.add_message("Erro: " + e, true);
+  } catch (const QString &e) {
+    output_panel_.add_message("Erro: " + e.toStdString(), true);
+  } catch (const std::exception &e) {
+    output_panel_.add_message(std::string("Erro: ") + e.what(), true);
+  } catch (...) {
+    output_panel_.add_message("Erro desconhecido", true);
   }
 }
 
 void TuiApp::do_run() {
-  if (!machine_->getBuildSuccessful()) return;
+  if (!machine_->getBuildSuccessful())
+    return;
   running_ = true;
   while (running_ && machine_->isRunning()) {
     try {
       machine_->step();
     } catch (...) {
-      break;
+      break; // Para execução contínua em qualquer erro
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
   }
   running_ = false;
 }
-
 void TuiApp::do_reset() {
   machine_->clear();
   running_ = false;
   output_panel_.add_message("Sistema resetado");
 }
+
 void TuiApp::do_reset_pc() {
   machine_->setPCValue(0);
   if (machine_->hasRegister(QString("SP")))
@@ -118,35 +150,36 @@ void TuiApp::do_reset_pc() {
 void TuiApp::run() {
   auto renderer = Renderer([&] { return render(); });
   auto main_component = CatchEvent(renderer, [this](Event event) {
-    if (event == Event::Character('q') || event == Event::Ctrl('c'))
-      return false;
+    if (event == Event::Character('q') ||
+        event == Event::Character(static_cast<char>(3)))
+      return false; // 3 = Ctrl+C
     if (event.is_character()) {
       char c = event.character()[0];
       switch (c) {
-        case 'h':
-          layout_config_.show_hex = !layout_config_.show_hex;
-          return true;
-        case 'f':
-          layout_config_.follow_pc = !layout_config_.follow_pc;
-          return true;
-        case 'b':
-          do_build();
-          return true;
-        case 's':
-          do_step();
-          return true;
-        case 'r':
-          if (running_)
-            machine_->setRunning(false);
-          else
-            do_run();
-          return true;
-        case 'x':
-          do_reset();
-          return true;
-        case 'p':
-          do_reset_pc();
-          return true;
+      case 'h':
+        layout_config_.show_hex = !layout_config_.show_hex;
+        return true;
+      case 'f':
+        layout_config_.follow_pc = !layout_config_.follow_pc;
+        return true;
+      case 'b':
+        do_build();
+        return true;
+      case 's':
+        do_step();
+        return true;
+      case 'r':
+        if (running_)
+          machine_->setRunning(false);
+        else
+          do_run();
+        return true;
+      case 'x':
+        do_reset();
+        return true;
+      case 'p':
+        do_reset_pc();
+        return true;
       }
     }
     if (event == Event::Escape && running_) {
@@ -167,26 +200,28 @@ Element TuiApp::render() {
                             .follow_pc = layout_config_.follow_pc});
   registers_panel_.set_config({.show_hex = layout_config_.show_hex});
 
-  return vbox(Elements{
-      render_header(),
-      hbox(Elements{
-          memory_panel_.render() | flex,
-          registers_panel_.render() |
-              size(WIDTH, EQUAL, layout_config_.registers_panel_width)}) |
-          flex,
-      output_panel_.render() |
-          size(HEIGHT, EQUAL, layout_config_.output_panel_height),
-      controls_panel_.render(), render_status_bar()});
+  return vbox(
+      Elements{render_header(),
+               hbox(Elements{memory_panel_.render() | flex,
+                             registers_panel_.render() |
+                                 size(WIDTH, EQUAL,
+                                      layout_config_.registers_panel_width)}) |
+                   flex,
+               output_panel_.render() |
+                   size(HEIGHT, EQUAL, layout_config_.output_panel_height),
+               controls_panel_.render(), render_status_bar()});
 }
 
 Element TuiApp::render_header() {
   std::string title = "HIDRA-TUI";
-  std::string machine_name = machine_->getName().toStdString();
   std::string file_info =
       current_filepath_.empty() ? "[sem arquivo]" : current_filepath_;
-  if (file_modified_) file_info += " *";
-  if (running_) title += " [RODANDO]";
-  return hidra::tui::compose_header(title, machine_name, file_info, running_,
+  if (file_modified_)
+    file_info += " *";
+  if (running_)
+    title += " [RODANDO]";
+
+  return hidra::tui::compose_header(title, machine_type_, file_info, running_,
                                     file_modified_);
 }
 

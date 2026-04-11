@@ -1,19 +1,18 @@
 #include "memory_panel.h"
-
+#include "layout.h"
 #include <ftxui/dom/elements.hpp>
 #include <iomanip>
 #include <sstream>
-
-#include "layout.h"
 
 using namespace ftxui;
 
 namespace hidra::tui::panels {
 
-MemoryPanel::MemoryPanel(const MemoryPanelConfig& config) : config_(config) {}
+MemoryPanel::MemoryPanel(const MemoryPanelConfig &config) : config_(config) {}
 
 Element MemoryPanel::render() const {
-  if (!machine_) return text("[sem máquina]") | border;
+  if (!machine_)
+    return text("[sem máquina]") | border;
 
   int mem_size = machine_->getMemorySize();
   int pc = machine_->getPCValue();
@@ -29,8 +28,8 @@ Element MemoryPanel::render() const {
     rows.push_back(render_row(addr, is_pc));
   }
 
-  auto content = vbox(std::move(rows));
-  return vbox(Elements{text(" MEMÓRIA ") | bold, separator(), content}) |
+  return vbox(Elements{text(" MEMÓRIA ") | bold, separator(),
+                       vbox(std::move(rows))}) |
          border;
 }
 
@@ -81,4 +80,4 @@ void MemoryPanel::center_on_pc() {
         std::max(0, machine_->getPCValue() - config_.visible_rows / 2);
 }
 
-}  // namespace hidra::tui::panels
+} // namespace hidra::tui::panels
