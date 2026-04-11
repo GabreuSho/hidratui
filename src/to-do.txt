@@ -1,0 +1,28 @@
+Hidra - To-do
+
+Geral
+
+- Oferecer para salvar o arquivo no mesmo local do arquivo aberto
+- Ao exportar memória, alertar que código e memória não estão em sincronia
+- MsgBox de "HLT atingido" para passo-a-passo.
+- Criar um .ini para lembrar "exibir hexa" e último local carregado/salvo
+- Recovery automático desabilitado, pois recuperava quando abria segunda instância
+  [ver: http://web.archive.org/web/20080511104347/http://wiki.qtcentre.org/index.php?title=SingleApplication]
+- UI: Help para diretivas (mencionar DW/DAW do Pericles)
+- Menu Editar c/Find/Replace
+- Atalho para comentar várias linhas de código de uma vez
+- [FEITO] Aceitar vírgula como separador de argumentos ("ADD A, 10", "IF A, 1, 2"). Cuidar modo indireto (,I)
+
+Testes p/outras máquinas
+
+- Testar upper/lowercase [testado invertendo case]
+- Testar endereços altos do Pericles
+- Testar DB Label+1
+
+Breakpoints
+
+- Adicionar e remover com clique, além de F12
+
+Sugestões
+
+- Disassembler de .mem
