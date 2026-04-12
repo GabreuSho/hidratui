@@ -34,7 +34,7 @@ class MemoryPanel {
   // Estado
   int get_base_address() const { return base_address_; }
   void set_base_address(int addr) { base_address_ = addr; }
-
+  std::string get_instruction_text(int address) const;
  private:
   Machine* machine_ = nullptr;
   MemoryPanelConfig config_;

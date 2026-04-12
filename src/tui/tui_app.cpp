@@ -5,10 +5,8 @@
 #include "tui/panels/output_panel.h"
 #include "tui/panels/registers_panel.h"
 
-// ⚠️ Headers das máquinas concretas (obrigatório para std::make_unique)
 #include "machines/ahmesmachine.h"
 #include "machines/neandermachine.h"
-#include "machines/periclesmachine.h" // Se existir no seu projeto
 #include "machines/ramsesmachine.h"
 #include "machines/regmachine.h"
 #include "machines/voltamachine.h"
@@ -21,7 +19,6 @@
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <sstream>
-#include <thread>
 
 using namespace ftxui;
 
@@ -36,21 +33,20 @@ TuiApp::TuiApp(const std::string &machine_type) : machine_type_(machine_type) {
     machine_ = std::make_unique<RegMachine>();
   else if (machine_type == "volta")
     machine_ = std::make_unique<VoltaMachine>();
-  else if (machine_type == "pericles")
-    machine_ = std::make_unique<PericlesMachine>();
   else
     throw std::runtime_error("Máquina não suportada: " + machine_type);
 
   memory_panel_.set_machine(machine_.get());
   registers_panel_.set_machine(machine_.get());
+  registers_panel_.set_machine_type(machine_type);
 
   controls_panel_.add_action({"uild", 'b', [this]() { do_build(); }});
   controls_panel_.add_action({"tep", 's', [this]() { do_step(); }});
   controls_panel_.add_action({"un/Stop", 'r', [this]() {
+                                running_ = !running_;
                                 if (running_)
-                                  machine_->setRunning(false);
-                                else
-                                  do_run();
+                                  last_step_time_ =
+                                      std::chrono::steady_clock::now();
                               }});
   controls_panel_.add_action({"eset PC", 'p', [this]() { do_reset_pc(); }});
   controls_panel_.add_action({"eset All", 'x', [this]() { do_reset(); }});
@@ -58,7 +54,7 @@ TuiApp::TuiApp(const std::string &machine_type) : machine_type_(machine_type) {
 
   layout_config_.show_hex = false;
   layout_config_.follow_pc = true;
-  layout_config_.registers_panel_width = 28;
+  layout_config_.registers_panel_width = 32;
   layout_config_.output_panel_height = 5;
 }
 
@@ -102,7 +98,7 @@ void TuiApp::do_build() {
     output_panel_.add_message(std::string("✗ Erro: ") + e.what(), true);
   } catch (...) {
     output_panel_.clear();
-    output_panel_.add_message("✗ Erro desconhecido na montagem", true);
+    output_panel_.add_message("✗ Erro desconhecido", true);
   }
 }
 
@@ -113,27 +109,11 @@ void TuiApp::do_step() {
     machine_->step();
   } catch (const QString &e) {
     output_panel_.add_message("Erro: " + e.toStdString(), true);
-  } catch (const std::exception &e) {
-    output_panel_.add_message(std::string("Erro: ") + e.what(), true);
   } catch (...) {
-    output_panel_.add_message("Erro desconhecido", true);
+    output_panel_.add_message("Erro na execução", true);
   }
 }
 
-void TuiApp::do_run() {
-  if (!machine_->getBuildSuccessful())
-    return;
-  running_ = true;
-  while (running_ && machine_->isRunning()) {
-    try {
-      machine_->step();
-    } catch (...) {
-      break; // Para execução contínua em qualquer erro
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
-  }
-  running_ = false;
-}
 void TuiApp::do_reset() {
   machine_->clear();
   running_ = false;
@@ -147,45 +127,127 @@ void TuiApp::do_reset_pc() {
   output_panel_.add_message("PC resetado para 0");
 }
 
+// ============================================================================
+// LOOP PRINCIPAL SINGLE-THREADED (STEP-PER-FRAME)
+// ============================================================================
+void TuiApp::do_run() {
+  if (!machine_->getBuildSuccessful())
+    return;
+
+  // ✅ CRÍTICO: O Hidra precisa deste flag para permitir execução
+  machine_->setRunning(true);
+  running_ = true;
+  last_step_time_ = std::chrono::steady_clock::now();
+}
+
 void TuiApp::run() {
-  auto renderer = Renderer([&] { return render(); });
+  last_step_time_ = std::chrono::steady_clock::now();
+
+  auto renderer = Renderer([&] {
+    if (running_ && machine_ && machine_->isRunning()) {
+      auto now = std::chrono::steady_clock::now();
+      if (now - last_step_time_ >= step_interval_) {
+        try {
+          machine_->step();
+          // Se o step não mudou o PC (ex: loop infinito ou erro silencioso),
+          // forçamos um refresh visual de qualquer forma.
+        } catch (const QString &e) {
+          output_panel_.add_message("Erro: " + e.toStdString(), true);
+          running_ = false;
+          machine_->setRunning(false);
+        } catch (const std::exception &e) {
+          output_panel_.add_message(std::string("Erro: ") + e.what(), true);
+          running_ = false;
+          machine_->setRunning(false);
+        }
+        last_step_time_ = now;
+      }
+    }
+    return render();
+  });
+
   auto main_component = CatchEvent(renderer, [this](Event event) {
     if (event == Event::Character('q') ||
-        event == Event::Character(static_cast<char>(3)))
-      return false; // 3 = Ctrl+C
+        event == Event::Character(static_cast<char>(3))) {
+      running_ = false;
+      return false;
+    }
+
     if (event.is_character()) {
       char c = event.character()[0];
       switch (c) {
+      case 'r':
+        if (running_) {
+          running_ = false;
+          machine_->setRunning(false);
+        } else {
+          do_run();
+        }
+        return true;
+      case 's':
+        if (!running_) {
+          machine_->setRunning(true); // Permite step único
+          do_step();
+        }
+        return true;
+      case 'b':
+        running_ = false;
+        machine_->setRunning(false);
+        do_build();
+        return true;
+      case 'x':
+        running_ = false;
+        machine_->setRunning(false);
+        do_reset();
+        return true;
+      case 'p':
+        do_reset_pc();
+        return true;
       case 'h':
         layout_config_.show_hex = !layout_config_.show_hex;
         return true;
       case 'f':
         layout_config_.follow_pc = !layout_config_.follow_pc;
         return true;
-      case 'b':
-        do_build();
+      case 'k':
+      case 'u':
+        memory_panel_.scroll_up(1);
+        layout_config_.follow_pc = false;
         return true;
-      case 's':
-        do_step();
+      case 'j':
+      case 'd':
+        memory_panel_.scroll_down(1);
+        layout_config_.follow_pc = false;
         return true;
-      case 'r':
-        if (running_)
-          machine_->setRunning(false);
-        else
-          do_run();
+      case 'g':
+        memory_panel_.set_base_address(0);
+        layout_config_.follow_pc = false;
         return true;
-      case 'x':
-        do_reset();
-        return true;
-      case 'p':
-        do_reset_pc();
+      case 'G':
+        if (machine_)
+          memory_panel_.set_base_address(machine_->getMemorySize() - 18);
+        layout_config_.follow_pc = false;
         return true;
       }
     }
-    if (event == Event::Escape && running_) {
+
+    if (event == Event::ArrowUp) {
+      memory_panel_.scroll_up(1);
+      layout_config_.follow_pc = false;
+      return true;
+    }
+    if (event == Event::ArrowDown) {
+      memory_panel_.scroll_down(1);
+      layout_config_.follow_pc = false;
+      return true;
+    }
+
+    if (event == Event::Escape) {
+      running_ = false;
       machine_->setRunning(false);
       return true;
     }
+
     return false;
   });
 
@@ -193,7 +255,7 @@ void TuiApp::run() {
 }
 
 Element TuiApp::render() {
-  memory_panel_.set_config({.visible_rows = 16,
+  memory_panel_.set_config({.visible_rows = 18,
                             .show_hex = layout_config_.show_hex,
                             .show_decimal = true,
                             .show_disassembly = true,
@@ -209,7 +271,7 @@ Element TuiApp::render() {
                    flex,
                output_panel_.render() |
                    size(HEIGHT, EQUAL, layout_config_.output_panel_height),
-               controls_panel_.render(), render_status_bar()});
+               render_controls_panel(), render_status_bar()});
 }
 
 Element TuiApp::render_header() {
@@ -219,8 +281,7 @@ Element TuiApp::render_header() {
   if (file_modified_)
     file_info += " *";
   if (running_)
-    title += " [RODANDO]";
-
+    title += " [▶ RODANDO]";
   return hidra::tui::compose_header(title, machine_type_, file_info, running_,
                                     file_modified_);
 }
@@ -229,4 +290,26 @@ Element TuiApp::render_status_bar() {
   return hidra::tui::compose_status_bar(
       layout_config_.show_hex ? "HEX" : "DEC",
       file_modified_ ? "MODIFICADO (auto-recarregando)" : "sincronizado");
+}
+
+Element TuiApp::render_controls_panel() {
+  auto toggle_style = [](bool active) -> ftxui::Decorator {
+    if (active)
+      return ftxui::color(ftxui::Color::Green);
+    return ftxui::color(ftxui::Color::White) | ftxui::dim;
+  };
+
+  return ftxui::hbox(ftxui::Elements{
+             ftxui::text("[B]uild ") | ftxui::color(ftxui::Color::Cyan),
+             ftxui::text("[S]tep ") | ftxui::color(ftxui::Color::Cyan),
+             ftxui::text("[R]un/Stop ") | ftxui::color(ftxui::Color::Cyan),
+             ftxui::text("[↑/↓]Scroll ") | ftxui::color(ftxui::Color::Yellow),
+             ftxui::text("[g/G]Top/Bot ") | ftxui::color(ftxui::Color::Yellow),
+             ftxui::text("[H]ex ") | toggle_style(layout_config_.show_hex),
+             ftxui::text("[F]ollowPC ") |
+                 toggle_style(layout_config_.follow_pc),
+             ftxui::text("[Q]uit") | ftxui::color(ftxui::Color::Red) |
+                 ftxui::bold,
+         }) |
+         ftxui::border;
 }

@@ -35,37 +35,29 @@ Element MemoryPanel::render() const {
 
 Element MemoryPanel::render_row(int address, bool is_pc) const {
   int value = machine_->getMemoryValue(address);
-  std::string instr = machine_->getInstructionString(address).toStdString();
+  std::string instr = get_instruction_text(address);
 
-  std::ostringstream addr_ss, hex_ss, dec_ss;
-  addr_ss << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
-          << address;
-  hex_ss << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
-         << value;
-  dec_ss << std::dec << value;
+  std::ostringstream addr_ss, val_ss;
+  addr_ss << std::setw(3) << std::setfill(' ') << address;
+  val_ss << std::setw(3) << std::setfill(' ') << value;
 
-  Elements row_elems;
-  row_elems.push_back(text(addr_ss.str()) | color(Color::White));
-  row_elems.push_back(text(" "));
-  row_elems.push_back(config_.show_hex
-                          ? (text(hex_ss.str()) | color(Color::Green) | bold)
-                          : text("  "));
-  row_elems.push_back(text(" "));
-  row_elems.push_back(config_.show_decimal
-                          ? (text(dec_ss.str()) | color(Color::White))
-                          : text("  "));
-  row_elems.push_back(text("  "));
-  row_elems.push_back(config_.show_disassembly && !instr.empty()
-                          ? (text(instr) | color(Color::Yellow))
-                          : text("..."));
+  auto addr_elem = text(addr_ss.str()) | color(Color::Green);
+  auto val_elem = text(val_ss.str()) | color(Color::Yellow);
 
-  auto row = hbox(row_elems);
+  std::string display_text = instr.empty() ? "(dado)" : instr;
+  auto text_elem = text(display_text) | color(Color::White);
+
+  auto row = hbox(Elements{addr_elem | size(WIDTH, EQUAL, 4), text(" ") | dim,
+                           val_elem | size(WIDTH, EQUAL, 4), text("  ") | dim,
+                           text_elem | flex});
+
+  // ✅ HIGHLIGHT: Se for a linha do PC, inverte as cores e coloca negrito
   if (is_pc) {
-    row = row | bgcolor(get_pc_highlight_color()) | color(Color::White);
+    row = row | bgcolor(Color::Blue) | color(Color::White) | bold;
   }
+
   return row;
 }
-
 void MemoryPanel::scroll_up(int lines) {
   base_address_ = std::max(0, base_address_ - lines);
 }
@@ -80,4 +72,16 @@ void MemoryPanel::center_on_pc() {
         std::max(0, machine_->getPCValue() - config_.visible_rows / 2);
 }
 
+std::string MemoryPanel::get_instruction_text(int address) const {
+  if (!machine_)
+    return "...";
+  try {
+    QString instr = machine_->getInstructionString(address);
+    if (instr.isEmpty())
+      return "...";
+    return instr.toStdString();
+  } catch (...) {
+    return "...";
+  }
+}
 } // namespace hidra::tui::panels
