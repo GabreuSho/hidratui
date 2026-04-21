@@ -2,7 +2,6 @@
 
 *.user*
 *moc_*.cpp
-*ui_*.h
 *Makefile*
 
 # Compiled Object files
