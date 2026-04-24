@@ -61,8 +61,6 @@ TuiApp::TuiApp(const std::string& machine_type) : machine_type_(machine_type) {
   layout_config_.follow_pc = true;
   layout_config_.registers_panel_width = 32;
   layout_config_.output_panel_height = 5;
-
-  address_go = 0;
 }
 
 TuiApp::~TuiApp() {
@@ -155,7 +153,7 @@ void TuiApp::run() {
   // ============================================================================
   std::thread timer_thread([&screen, &timer_active]() {
     while (timer_active.load()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
       // Envia evento espaço (' ') que será ignorado pelo handler, mas acorda o
       // loop
       screen.PostEvent(Event::Character(' '));
@@ -172,11 +170,13 @@ void TuiApp::run() {
     }
 
     // 2. SIMULAÇÃO: Executa 1 passo a cada step_interval_ (ex: 100ms)
-    if (running_ && machine_ && machine_->isRunning()) {
+    if (running_ && machine_ && machine_->isRunning() &&
+        ((this->running_steps_ > 0) || (running_steps_ == -1))) {
       auto now = steady_clock::now();
-      if (now - last_step_time_ >= step_interval_) {
+      if ((now - last_step_time_ >= step_interval_)) {
         try {
           machine_->step();
+          if (running_steps_ > 0) this->running_steps_ -= 1;
         } catch (const QString& e) {
           output_panel_.add_message("Erro: " + e.toStdString(), true);
           running_ = false;
@@ -192,6 +192,10 @@ void TuiApp::run() {
         }
         last_step_time_ = now;
       }
+    } else if (running_steps_ == 0) {
+      running_ = false;
+      machine_->setRunning(false);
+      running_steps_ -= 1;
     }
 
     return render();
@@ -220,36 +224,40 @@ void TuiApp::run() {
       char c = event.character()[0];
       switch (c) {
         case '1':
-          this->address_go = (this->address_go * 10) + 1;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 1;
           return true;
         case '2':
-          this->address_go = (this->address_go * 10) + 2;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 2;
           return true;
         case '3':
-          this->address_go = (this->address_go * 10) + 3;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 3;
           return true;
         case '4':
-          this->address_go = (this->address_go * 10) + 4;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 4;
           return true;
         case '5':
-          this->address_go = (this->address_go * 10) + 5;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 5;
           return true;
         case '6':
-          this->address_go = (this->address_go * 10) + 6;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 6;
           return true;
         case '7':
-          this->address_go = (this->address_go * 10) + 7;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 7;
           return true;
         case '8':
-          this->address_go = (this->address_go * 10) + 8;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 8;
           return true;
         case '9':
-          this->address_go = (this->address_go * 10) + 9;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 9;
           return true;
         case '0':
-          this->address_go = (this->address_go * 10) + 0;
+          this->address_running_aux_ = (this->address_running_aux_ * 10) + 0;
           return true;
         case 'r':  // Run/Stop toggle
+          if (address_running_aux_ > 0) {
+            this->running_steps_ = this->address_running_aux_;
+            this->address_running_aux_ = 0;
+          }
           running_ = !running_;
           if (running_ && machine_) {
             machine_->setRunning(true);
@@ -259,10 +267,17 @@ void TuiApp::run() {
           }
           return true;
         case 's':  // Step único
+          if (address_running_aux_ >= 0) {
+            running_steps_ = address_running_aux_;
+            address_running_aux_ = 0;
+          }
           if (!running_ && machine_) {
-            machine_->setRunning(true);
-            do_step();
-            machine_->setRunning(false);
+            do {
+              machine_->setRunning(true);
+              do_step();
+              machine_->setRunning(false);
+              running_steps_ -= 1;
+            } while (running_steps_ > 0);
           }
           return true;
         case 'b':  // Build manual + para execução
@@ -295,24 +310,29 @@ void TuiApp::run() {
           layout_config_.follow_pc = false;
           return true;
         case 'g':
-          if (this->address_go > 0 and
-              this->address_go < machine_->getMemorySize()) {
-            memory_panel_.set_base_address(this->address_go);
+          this->address_go_ = this->address_running_aux_;
+          this->address_running_aux_ = 0;
+
+          if (this->address_go_ > 0 and
+              this->address_go_ < machine_->getMemorySize()) {
+            memory_panel_.set_base_address(this->address_go_);
           } else {
             memory_panel_.set_base_address(0);
           }
-          this->address_go = 0;
+          this->address_go_ = 0;
           layout_config_.follow_pc = false;
           return true;
         case 'G':
-          if (this->address_go > 0 and
-              this->address_go < machine_->getMemorySize()) {
-            memory_panel_.set_base_address(this->address_go);
+          this->address_go_ = this->address_running_aux_;
+          this->address_running_aux_ = 0;
+          if (this->address_go_ > 0 and
+              this->address_go_ < machine_->getMemorySize()) {
+            memory_panel_.set_base_address(this->address_go_);
           } else {
             if (machine_)
               memory_panel_.set_base_address(machine_->getMemorySize() - 18);
           }
-          this->address_go = 0;
+          this->address_go_ = 0;
           layout_config_.follow_pc = false;
           return true;
         case 'q':

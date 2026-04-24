@@ -29,8 +29,6 @@ class TuiApp {
   bool is_running() const { return running_; }
   bool is_modified() const { return file_modified_; }
 
-  int address_go;
-
  private:
   std::unique_ptr<Machine> machine_;
   std::unique_ptr<FileMonitor> file_monitor_;
@@ -39,6 +37,9 @@ class TuiApp {
 
   bool running_ = false;
   bool file_modified_ = false;
+  int address_go_ = 0;
+  int running_steps_ = -1;
+  int address_running_aux_ = 0;
 
   // Controle de tempo para execução frame-a-frame
   std::chrono::steady_clock::time_point last_step_time_;
