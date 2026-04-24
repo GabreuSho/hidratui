@@ -24,7 +24,7 @@ class MemoryPanel {
   void set_config(const MemoryPanelConfig& config) { config_ = config; }
 
   // Gera o elemento FTXUI para renderização
-  ftxui::Element render() const;
+  ftxui::Element render();
 
   // Navegação
   void scroll_up(int lines = 1);
@@ -34,13 +34,15 @@ class MemoryPanel {
   // Estado
   int get_base_address() const { return base_address_; }
   void set_base_address(int addr) { base_address_ = addr; }
-  std::string get_instruction_text(int address) const;
+  std::string get_instruction_text(int address);
+  std::string get_label_text(int address) const;
+
  private:
   Machine* machine_ = nullptr;
   MemoryPanelConfig config_;
   int base_address_ = 0;
 
-  ftxui::Element render_row(int address, bool is_pc) const;
+  ftxui::Element render_row(int address, bool is_pc);
   std::string format_cell(int value, bool hex, bool decimal) const;
 };
 

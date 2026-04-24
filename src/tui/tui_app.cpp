@@ -1,13 +1,16 @@
 #include "tui/tui_app.h"
 
 #include <QString>
+#include <atomic>
 #include <chrono>
 #include <fstream>
+#include <ftxui/component/animation.hpp>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/event.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <sstream>
+#include <thread>
 
 #include "machines/ahmesmachine.h"
 #include "machines/neandermachine.h"
@@ -90,6 +93,7 @@ void TuiApp::do_build() {
 
   try {
     machine_->assemble(QString::fromStdString(buffer.str()));
+    machine_->updateInstructionStrings();
     file_modified_ = false;
     output_panel_.clear();
     output_panel_.add_message("✓ Montagem OK", false);
@@ -139,24 +143,35 @@ void TuiApp::do_reset_pc() {
 }
 
 void TuiApp::run() {
+  auto screen = ScreenInteractive::Fullscreen();
   last_step_time_ = steady_clock::now();
 
-  // Step-per-frame: executa 1 instrução a cada 50ms DENTRO do renderer.
-  // Isso mantém a thread principal viva, processa eventos (ESC) e atualiza a UI
-  // naturalmente.
-  auto renderer = Renderer([&] {
-    if (file_modified_) do_build();
+  // Flag atômica para controlar a thread de timer
+  std::atomic<bool> timer_active{true};
 
-    return render();
+  // ============================================================================
+  // TIMER THREAD: Envia evento "dummy" a cada 50ms para forçar redraw da UI
+  // PostEvent é thread-safe no FTXUI e acorda o loop principal
+  // ============================================================================
+  std::thread timer_thread([&screen, &timer_active]() {
+    while (timer_active.load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      // Envia evento espaço (' ') que será ignorado pelo handler, mas acorda o
+      // loop
+      screen.PostEvent(Event::Character(' '));
+    }
   });
 
-  auto main_component = CatchEvent(renderer, [this](Event event) {
-    if (event == Event::Character('q') &&
-        event == Event::Character(static_cast<char>(3))) {
-      running_ = false;
-      return false;
+  // ============================================================================
+  // RENDERER: Renderiza UI + Auto-Build + Simulação (thread principal)
+  // ============================================================================
+  auto renderer = Renderer([&] {
+    // 1. AUTO-BUILD: Verifica mudança no arquivo e recompila
+    if (file_modified_) {
+      do_build();
     }
 
+    // 2. SIMULAÇÃO: Executa 1 passo a cada step_interval_ (ex: 100ms)
     if (running_ && machine_ && machine_->isRunning()) {
       auto now = steady_clock::now();
       if (now - last_step_time_ >= step_interval_) {
@@ -170,9 +185,35 @@ void TuiApp::run() {
           output_panel_.add_message(std::string("Erro: ") + e.what(), true);
           running_ = false;
           machine_->setRunning(false);
+        } catch (...) {
+          output_panel_.add_message("Erro desconhecido", true);
+          running_ = false;
+          machine_->setRunning(false);
         }
         last_step_time_ = now;
       }
+    }
+
+    return render();
+  });
+
+  // ============================================================================
+  // EVENT HANDLER: Captura teclas e controla o fluxo
+  // ============================================================================
+  auto main_component = CatchEvent(renderer, [this, &screen,
+                                              &timer_active](Event event) {
+    // Q ou ESC -> Para tudo e sai
+    if (event == Event::Character('q') || event == Event::Escape) {
+      timer_active.store(false);  // Para a thread de timer
+      running_ = false;
+      if (machine_) machine_->setRunning(false);
+      screen.Exit();
+      return true;
+    }
+
+    // Ignora o evento "dummy" do timer (espaço)
+    if (event == Event::Character(' ')) {
+      return true;
     }
 
     if (event.is_character()) {
@@ -208,42 +249,48 @@ void TuiApp::run() {
         case '0':
           this->address_go = (this->address_go * 10) + 0;
           return true;
-        case 'r':
-          if (running_) {
-            running_ = false;
+        case 'r':  // Run/Stop toggle
+          running_ = !running_;
+          if (running_ && machine_) {
+            machine_->setRunning(true);
+            last_step_time_ = steady_clock::now();
+          } else if (machine_) {
             machine_->setRunning(false);
-          } else
-            do_run();
+          }
           return true;
-        case 's':
-          if (!running_) do_step();
+        case 's':  // Step único
+          if (!running_ && machine_) {
+            machine_->setRunning(true);
+            do_step();
+            machine_->setRunning(false);
+          }
           return true;
-        case 'b':
+        case 'b':  // Build manual + para execução
           running_ = false;
-          machine_->setRunning(false);
+          if (machine_) machine_->setRunning(false);
           do_build();
           return true;
-        case 'x':
+        case 'x':  // Reset completo
           running_ = false;
-          machine_->setRunning(false);
+          if (machine_) machine_->setRunning(false);
           do_reset();
           return true;
-        case 'p':
+        case 'p':  // Reset PC
           do_reset_pc();
           return true;
-        case 'h':
+        case 'h':  // Toggle Hex/Decimal
           layout_config_.show_hex = !layout_config_.show_hex;
           return true;
-        case 'f':
+        case 'f':  // Toggle Follow PC
           layout_config_.follow_pc = !layout_config_.follow_pc;
           return true;
         case 'k':
-        case 'u':
+        case 'u':  // Scroll up
           memory_panel_.scroll_up(1);
           layout_config_.follow_pc = false;
           return true;
         case 'j':
-        case 'd':
+        case 'd':  // Scroll down
           memory_panel_.scroll_down(1);
           layout_config_.follow_pc = false;
           return true;
@@ -273,6 +320,7 @@ void TuiApp::run() {
       }
     }
 
+    // Setas do teclado
     if (event == Event::ArrowUp) {
       memory_panel_.scroll_up(1);
       layout_config_.follow_pc = false;
@@ -284,17 +332,21 @@ void TuiApp::run() {
       return true;
     }
 
-    if (event == Event::Escape) {
-      running_ = false;
-      machine_->setRunning(false);
-      return true;
-    }
-
-    return false;
+    return false;  // Evento não tratado
   });
 
-  // Loop principal do FTXUI (gerencia renderização + eventos automaticamente)
-  ScreenInteractive::Fullscreen().Loop(main_component);
+  // ============================================================================
+  // LOOP PRINCIPAL DO FTXUI
+  // ============================================================================
+  screen.Loop(main_component);
+
+  // ============================================================================
+  // CLEANUP: Garante que a thread de timer termine
+  // ============================================================================
+  timer_active.store(false);
+  if (timer_thread.joinable()) {
+    timer_thread.join();
+  }
 }
 
 Element TuiApp::render() {
