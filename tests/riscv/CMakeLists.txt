@@ -1,21 +1,13 @@
-# CMakeLists.txt para Testes RISC-V
+# CMakeLists.txt para Testes RISC-V do Hidra
+# Requer que hidrariscv já tenha sido compilada
 
 cmake_minimum_required(VERSION 3.16)
-project(RiscVTests LANGUAGES CXX)
 
-# Requer C++17
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# Não criar novo projeto, usar o contexto do CMakeLists.txt principal
+# project(RiscVTests LANGUAGES CXX)
 
-# Encontrar Qt5
+# Encontrar Qt5 Core e Test
 find_package(Qt5 COMPONENTS Core Test REQUIRED)
-
-# Diretório de includes
-include_directories(
-    ${CMAKE_SOURCE_DIR}/../../src/riscv
-    ${Qt5Core_INCLUDE_DIRS}
-    ${Qt5Test_INCLUDE_DIRS}
-)
 
 # Arquivos de teste
 set(TEST_SOURCES
@@ -27,9 +19,17 @@ add_executable(riscv_tests ${TEST_SOURCES})
 
 # Linkar bibliotecas
 target_link_libraries(riscv_tests
-    Qt5::Core
-    Qt5::Test
-    hidrariscv  # Biblioteca RISC-V do Hidra
+    PRIVATE
+        Qt5::Core
+        Qt5::Test
+        hidrariscv  # Biblioteca RISC-V do Hidra
+)
+
+# Include directories
+target_include_directories(riscv_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src/riscv
+    ${CMAKE_SOURCE_DIR}/src
 )
 
 # Habilitar testes com CTest
@@ -48,14 +48,21 @@ add_test(NAME RiscVALUTests
 add_test(NAME RiscVCPUTests 
          COMMAND riscv_tests RiscVCPUTests)
 
-# Opções de build
-option(RISCV_TESTS_VERBOSE "Verbose test output" OFF)
+# Configurações de compilação
+target_compile_features(riscv_tests PRIVATE cxx_std_17)
 
+# Flags de warning
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(riscv_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# Opção para output verboso
+option(RISCV_TESTS_VERBOSE "Verbose test output" OFF)
 if(RISCV_TESTS_VERBOSE)
     target_compile_definitions(riscv_tests PRIVATE QT_TESTLIB_VERBOSITY=2)
 endif()
 
-# Flags de compilação adicionais (opcionais)
+# Debug flags
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(riscv_tests PRIVATE -g -O0)
 endif()

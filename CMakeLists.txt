@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ============ QT5 CORE (obrigatório para QRegExp) ============
 set(CMAKE_AUTOMOC ON)
-find_package(Qt5 5.15 REQUIRED COMPONENTS Core)
+find_package(Qt5 5.15 REQUIRED COMPONENTS Core Test)
 set(QT_TARGET Qt5::Core)
 
 # ============ CORE LIBRARY ============
@@ -20,6 +20,14 @@ file(GLOB MACHINES_SOURCES src/machines/*.cpp)
 add_library(hidramachines STATIC ${MACHINES_SOURCES})
 target_include_directories(hidramachines PUBLIC src)
 target_link_libraries(hidramachines PUBLIC hidracore ${QT_TARGET})
+
+# ============ RISC-V MODULE ============
+option(ENABLE_RISCV "Enable RISC-V support" ON)
+if(ENABLE_RISCV)
+    add_subdirectory(src/riscv)
+    # hidramachines precisa acessar classes RISC-V se houver integração
+    target_link_libraries(hidramachines PUBLIC hidrariscv)
+endif()
 
 # ============ FTXUI ============
 find_package(ftxui REQUIRED COMPONENTS screen dom component)
@@ -35,10 +43,20 @@ target_link_libraries(hidratui PUBLIC
     ftxui::component
 )
 
+# Adiciona pthread no Linux
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(hidratui PRIVATE pthread)
+endif()
+
 # ============ EXECUTABLE ============
 add_executable(hidra-tui src/main_tui.cpp)
 target_link_libraries(hidra-tui PRIVATE hidratui)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(hidratui PRIVATE pthread)
+# ============ TESTES ============
+enable_testing()
+add_subdirectory(src/tests)
+
+# Testes RISC-V (se habilitado)
+if(ENABLE_RISCV)
+    add_subdirectory(tests/riscv)
 endif()
