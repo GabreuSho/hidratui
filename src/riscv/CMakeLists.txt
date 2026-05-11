@@ -1,5 +1,5 @@
 # CMakeLists.txt para o módulo RISC-V do Hidra
-# Adicione este subdiretório ao CMakeLists.txt principal
+# Requer Qt5 Core e hidracore já configurados no CMakeLists.txt principal
 
 # Coleta arquivos fonte RISC-V
 set(RISCV_SOURCES
@@ -19,10 +19,13 @@ set(RISCV_HEADERS
 # Cria biblioteca estática para o núcleo RISC-V
 add_library(hidrariscv STATIC ${RISCV_SOURCES} ${RISCV_HEADERS})
 
+# Habilita MOC do Qt para headers com Q_OBJECT
+set_target_properties(hidrariscv PROPERTIES AUTOMOC ON)
+
 # Dependências
 target_link_libraries(hidrariscv 
-    Qt5::Widgets
-    hidracore
+    PUBLIC Qt5::Core
+    PRIVATE hidracore
 )
 
 # Define include directories
@@ -34,8 +37,10 @@ target_include_directories(hidrariscv PUBLIC
 # Configurações de compilação
 target_compile_features(hidrariscv PUBLIC cxx_std_17)
 
-# Opcional: define flag para habilitar/desabilitar suporte RISC-V
-option(ENABLE_RISCV "Enable RISC-V support" ON)
-if(ENABLE_RISCV)
-    target_compile_definitions(hidrariscv PUBLIC RISCV_ENABLED)
+# Flags de warning para melhor qualidade de código
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(hidrariscv PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+# Define macro para builds condicionais
+target_compile_definitions(hidrariscv PUBLIC RISCV_ENABLED)
