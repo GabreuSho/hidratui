@@ -1,32 +1,25 @@
-# Qt Files
+```
+# Build artifacts
+build/
+cmake-build-*/
 
-*.user*
-*moc_*.cpp
-*Makefile*
+# Dependencies
+CMakeFiles/
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# Logs and temp files
+*.log
+*.tmp
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
+# Environment
+.env
+.env.local
+*.env.*
 
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
+# Editors
+.vscode/
+.idea/
 
-# Executables
-# *.exe
-*.out
-*.app
-hidra-build*/
-build*/
-.vscode
-
-# Exclude top CMakeLists for manual config
-#/CMakeLists.txt
+# OS generated files
+.DS_Store
+Thumbs.db
+```
