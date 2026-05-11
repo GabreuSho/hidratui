@@ -190,6 +190,15 @@ public:
     static bool isValidInstruction(uint32_t instruction);
     
     /**
+     * @brief Verifica se um endereço está alinhado para instruções de 32 bits
+     * @param address Endereço a verificar
+     * @return true se address % 4 == 0
+     */
+    static bool isAligned(uint32_t address) {
+        return (address & ALIGNMENT_MASK) == 0;
+    }
+    
+    /**
      * @brief Obtém o mnemônico de uma instrução decodificada
      */
     static QString getMnemonic(const DecodedInstruction &instr);
