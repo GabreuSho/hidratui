@@ -29,28 +29,35 @@ if(ENABLE_RISCV)
     target_link_libraries(hidramachines PUBLIC hidrariscv)
 endif()
 
-# ============ FTXUI ============
-find_package(ftxui REQUIRED COMPONENTS screen dom component)
-
-# ============ TUI LIBRARY ============
-file(GLOB TUI_SOURCES src/tui/*.cpp src/tui/panels/*.cpp)
-add_library(hidratui STATIC ${TUI_SOURCES})
-target_include_directories(hidratui PUBLIC src src/tui)
-target_link_libraries(hidratui PUBLIC 
-    hidramachines 
-    ftxui::screen
-    ftxui::dom
-    ftxui::component
-)
-
-# Adiciona pthread no Linux
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_libraries(hidratui PRIVATE pthread)
+# ============ FTXUI (opcional para TUI) ============
+find_package(ftxui COMPONENTS screen dom component QUIET)
+if(NOT ftxui_FOUND)
+    message(STATUS "FTXUI not found - building core library and tests only")
 endif()
 
-# ============ EXECUTABLE ============
-add_executable(hidra-tui src/main_tui.cpp)
-target_link_libraries(hidra-tui PRIVATE hidratui)
+# ============ TUI LIBRARY (se FTXUI disponível) ============
+if(ftxui_FOUND)
+    file(GLOB TUI_SOURCES src/tui/*.cpp src/tui/panels/*.cpp)
+    add_library(hidratui STATIC ${TUI_SOURCES})
+    target_include_directories(hidratui PUBLIC src src/tui)
+    target_link_libraries(hidratui PUBLIC 
+        hidramachines 
+        ftxui::screen
+        ftxui::dom
+        ftxui::component
+    )
+    
+    # Adiciona pthread no Linux
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_link_libraries(hidratui PRIVATE pthread)
+    endif()
+    
+    # ============ EXECUTABLE ============
+    add_executable(hidra-tui src/main_tui.cpp)
+    target_link_libraries(hidra-tui PRIVATE hidratui)
+else()
+    message(STATUS "Skipping TUI executable - FTXUI not available")
+endif()
 
 # ============ TESTES ============
 enable_testing()

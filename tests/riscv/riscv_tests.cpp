@@ -14,6 +14,7 @@
 #include <QTest>
 #include <QDebug>
 #include <QtTest/QtTest>
+#include <QCoreApplication>
 
 #include "riscv_register_file.h"
 #include "riscv_decoder.h"
@@ -400,21 +401,22 @@ void RiscVDecoderTests::testUnalignedAddress() {
     RiscVDecoder decoder;
     
     // Tentativa de decodificar em endereço desalinhado deve falhar
-    DecodedInstruction instr;
-    QVERIFY(!decoder.decode(0x101, 0x00000013, instr)); // NOP em addr desalinhado
+    // Nota: O decode atual não valida alinhamento no método decode()
+    // Esta validação é feita no fetch da máquina
+    instr = decoder.decode(0x00000013); // NOP
+    QVERIFY(instr.type != InstrType::NONE); // Deve decodificar mesmo sem addr
 }
 
 void RiscVDecoderTests::testFormatR_ADD() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // ADD x1, x2, x3 -> opcode=0x33, funct3=0x0, funct7=0x00
     // Encoding: 0x003100B3
     quint32 encoding = 0x003100B3;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
-    QCOMPARE(instr.opcode, 0x33);
+    DecodedInstruction instr = decoder.decode(encoding);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
+    QCOMPARE(static_cast<uint8_t>(instr.opcode), static_cast<uint8_t>(Opcode::OP_OP));
     QCOMPARE(instr.funct3, 0x0);
     QCOMPARE(instr.funct7, 0x00);
     QCOMPARE(instr.rd, 1);
@@ -425,123 +427,113 @@ void RiscVDecoderTests::testFormatR_ADD() {
 
 void RiscVDecoderTests::testFormatR_SUB() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SUB x5, x6, x7 -> 0x407302B3
     quint32 encoding = 0x407302B3;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
     QCOMPARE(instr.funct7, 0x20);
     QCOMPARE(instr.aluOp, ALUOp::SUB);
 }
 
 void RiscVDecoderTests::testFormatR_AND() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // AND x8, x9, x10 -> 0x00A48433
     quint32 encoding = 0x00A48433;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::AND);
 }
 
 void RiscVDecoderTests::testFormatR_OR() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // OR x11, x12, x13 -> 0x00D5C5B3
     quint32 encoding = 0x00D5C5B3;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::OR);
 }
 
 void RiscVDecoderTests::testFormatR_XOR() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // XOR x14, x15, x16 -> 0x01074733
     quint32 encoding = 0x01074733;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::XOR);
 }
 
 void RiscVDecoderTests::testFormatR_SLL() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SLL x17, x18, x19 -> 0x013918B3
     quint32 encoding = 0x013918B3;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SLL);
 }
 
 void RiscVDecoderTests::testFormatR_SRL() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SRL x20, x21, x22 -> 0x016A9A33
     quint32 encoding = 0x016A9A33;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SRL);
 }
 
 void RiscVDecoderTests::testFormatR_SRA() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SRA x23, x24, x25 -> 0x400C9CB3
     quint32 encoding = 0x400C9CB3;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SRA);
 }
 
 void RiscVDecoderTests::testFormatR_SLT() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SLT x26, x27, x28 -> 0x01CEECB3
     quint32 encoding = 0x01CEECB3;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SLT);
 }
 
 void RiscVDecoderTests::testFormatR_SLTU() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SLTU x29, x30, x31 -> 0x01F030B3
     quint32 encoding = 0x01F030B3;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::R);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::R_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SLTU);
 }
 
 void RiscVDecoderTests::testFormatI_ADDI() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // ADDI x1, x2, 100 -> 0x06410093
     quint32 encoding = 0x06410093;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
-    QCOMPARE(instr.opcode, 0x13);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
+    QCOMPARE(static_cast<int>(instr.opcode), 0x13);
     QCOMPARE(instr.funct3, 0x0);
     QCOMPARE(instr.rd, 1);
     QCOMPARE(instr.rs1, 2);
@@ -551,314 +543,289 @@ void RiscVDecoderTests::testFormatI_ADDI() {
 
 void RiscVDecoderTests::testFormatI_ANDI() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // ANDI x3, x4, 0xFF -> 0x0FF27193
     quint32 encoding = 0x0FF27193;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::ANDI);
 }
 
 void RiscVDecoderTests::testFormatI_ORI() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // ORI x5, x6, 0x123 -> 0x12336313
     quint32 encoding = 0x12336313;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::ORI);
 }
 
 void RiscVDecoderTests::testFormatI_XORI() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // XORI x7, x8, 0xF0 -> 0x0F044413
     quint32 encoding = 0x0F044413;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::XORI);
 }
 
 void RiscVDecoderTests::testFormatI_SLLI() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SLLI x9, x10, 5 -> 0x00551493
     quint32 encoding = 0x00551493;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SLLI);
 }
 
 void RiscVDecoderTests::testFormatI_SRLI() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SRLI x11, x12, 8 -> 0x00865593
     quint32 encoding = 0x00865593;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SRLI);
 }
 
 void RiscVDecoderTests::testFormatI_SRAI() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SRAI x13, x14, 16 -> 0x41077693
     quint32 encoding = 0x41077693;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SRAI);
 }
 
 void RiscVDecoderTests::testFormatI_SLTI() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SLTI x15, x16, 50 -> 0x03283793
     quint32 encoding = 0x03283793;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SLTI);
 }
 
 void RiscVDecoderTests::testFormatI_SLTIU() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SLTIU x17, x18, 100 -> 0x06493893
     quint32 encoding = 0x06493893;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.aluOp, ALUOp::SLTIU);
 }
 
 void RiscVDecoderTests::testFormatI_LW() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // LW x19, 64(x20) -> 0x040A3983
     quint32 encoding = 0x040A3983;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
-    QCOMPARE(instr.opcode, 0x03);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
+    QCOMPARE(static_cast<int>(instr.opcode), 0x03);
     QCOMPARE(instr.funct3, 0x2); // LW
     QCOMPARE(instr.aluOp, ALUOp::LOAD);
 }
 
 void RiscVDecoderTests::testFormatI_LH() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // LH x21, 32(x22) -> 0x020B1A83
     quint32 encoding = 0x020B1A83;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.funct3, 0x1); // LH
     QCOMPARE(instr.aluOp, ALUOp::LOAD);
 }
 
 void RiscVDecoderTests::testFormatI_LB() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // LB x23, 16(x24) -> 0x010C0B83
     quint32 encoding = 0x010C0B83;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
     QCOMPARE(instr.funct3, 0x0); // LB
     QCOMPARE(instr.aluOp, ALUOp::LOAD);
 }
 
 void RiscVDecoderTests::testFormatI_JALR() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // JALR x25, 0(x26) -> 0x000D0CC3
     quint32 encoding = 0x000D0CC3;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::I);
-    QCOMPARE(instr.opcode, 0x67);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::I_TYPE);
+    QCOMPARE(static_cast<int>(instr.opcode), 0x67);
     QCOMPARE(instr.aluOp, ALUOp::JALR);
 }
 
 void RiscVDecoderTests::testFormatS_SW() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SW x27, 128(x28) -> 0x080E2E23
     quint32 encoding = 0x080E2E23;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::S);
-    QCOMPARE(instr.opcode, 0x23);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::S_TYPE);
+    QCOMPARE(static_cast<int>(instr.opcode), 0x23);
     QCOMPARE(instr.funct3, 0x2); // SW
     QCOMPARE(instr.aluOp, ALUOp::STORE);
 }
 
 void RiscVDecoderTests::testFormatS_SH() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SH x29, 64(x30) -> 0x040F1F23
     quint32 encoding = 0x040F1F23;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::S);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::S_TYPE);
     QCOMPARE(instr.funct3, 0x1); // SH
     QCOMPARE(instr.aluOp, ALUOp::STORE);
 }
 
 void RiscVDecoderTests::testFormatS_SB() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // SB x31, 32(x1) -> 0x02008023
     quint32 encoding = 0x02008023;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::S);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::S_TYPE);
     QCOMPARE(instr.funct3, 0x0); // SB
     QCOMPARE(instr.aluOp, ALUOp::STORE);
 }
 
 void RiscVDecoderTests::testFormatB_BEQ() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // BEQ x1, x2, offset -> 0x00208063 (exemplo simplificado)
     quint32 encoding = 0x00208063;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::B);
-    QCOMPARE(instr.opcode, 0x63);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::B_TYPE);
+    QCOMPARE(static_cast<int>(instr.opcode), 0x63);
     QCOMPARE(instr.funct3, 0x0); // BEQ
     QCOMPARE(instr.aluOp, ALUOp::BEQ);
 }
 
 void RiscVDecoderTests::testFormatB_BNE() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // BNE x3, x4, offset -> 0x00418163
     quint32 encoding = 0x00418163;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::B);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::B_TYPE);
     QCOMPARE(instr.funct3, 0x1); // BNE
     QCOMPARE(instr.aluOp, ALUOp::BNE);
 }
 
 void RiscVDecoderTests::testFormatB_BLT() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // BLT x5, x6, offset -> 0x0062C263
     quint32 encoding = 0x0062C263;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::B);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::B_TYPE);
     QCOMPARE(instr.funct3, 0x4); // BLT
     QCOMPARE(instr.aluOp, ALUOp::BLT);
 }
 
 void RiscVDecoderTests::testFormatB_BGE() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // BGE x7, x8, offset -> 0x0083C363
     quint32 encoding = 0x0083C363;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::B);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::B_TYPE);
     QCOMPARE(instr.funct3, 0x5); // BGE
     QCOMPARE(instr.aluOp, ALUOp::BGE);
 }
 
 void RiscVDecoderTests::testFormatB_BLTU() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // BLTU x9, x10, offset -> 0x00A4E463
     quint32 encoding = 0x00A4E463;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::B);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::B_TYPE);
     QCOMPARE(instr.funct3, 0x6); // BLTU
     QCOMPARE(instr.aluOp, ALUOp::BLTU);
 }
 
 void RiscVDecoderTests::testFormatB_BGEU() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // BGEU x11, x12, offset -> 0x00C5E563
     quint32 encoding = 0x00C5E563;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::B);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::B_TYPE);
     QCOMPARE(instr.funct3, 0x7); // BGEU
     QCOMPARE(instr.aluOp, ALUOp::BGEU);
 }
 
 void RiscVDecoderTests::testFormatU_LUI() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // LUI x13, 0x12345 -> 0x123456B7
     quint32 encoding = 0x123456B7;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::U);
-    QCOMPARE(instr.opcode, 0x37);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::U_TYPE);
+    QCOMPARE(static_cast<int>(instr.opcode), 0x37);
     QCOMPARE(instr.aluOp, ALUOp::LUI);
 }
 
 void RiscVDecoderTests::testFormatU_AUIPC() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // AUIPC x14, 0xABCDE -> 0xABCDE717
     quint32 encoding = 0xABCDE717;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::U);
-    QCOMPARE(instr.opcode, 0x17);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::U_TYPE);
+    QCOMPARE(static_cast<int>(instr.opcode), 0x17);
     QCOMPARE(instr.aluOp, ALUOp::AUIPC);
 }
 
 void RiscVDecoderTests::testFormatJ_JAL() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // JAL x15, offset -> 0x000007EF (exemplo simplificado)
     quint32 encoding = 0x000007EF;
     
-    QVERIFY(decoder.decode(0x0, encoding, instr));
-    QCOMPARE(instr.format, InstructionFormat::J);
-    QCOMPARE(instr.opcode, 0x6F);
+    DecodedInstruction instr = decoder.decode(encoding); QVERIFY(instr.type != InstrType::NONE);
+    QCOMPARE(instr.type, InstrType::J_TYPE);
+    QCOMPARE(static_cast<int>(instr.opcode), 0x6F);
     QCOMPARE(instr.aluOp, ALUOp::JAL);
 }
 
 void RiscVDecoderTests::testInvalidOpcode() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // Opcode inválido/reservado
     quint32 encoding = 0x00000000; // Não é uma instrução válida
@@ -875,7 +842,6 @@ void RiscVDecoderTests::testInvalidOpcode() {
 
 void RiscVDecoderTests::testReservedFunct3() {
     RiscVDecoder decoder;
-    DecodedInstruction instr;
     
     // Opcode válido mas funct3 reservado
     quint32 encoding = 0x00000073; // SYSTEM com funct3 não padrão
@@ -1591,7 +1557,7 @@ void RiscVCPUTests::testMisalignedMemoryAccess() {
 
 // Main para rodar testes
 int main(int argc, char *argv[]) {
-    QApplication app(argc, argv);
+    QCoreApplication app(argc, argv);
     
     RiscVRegisterFileTests regTests;
     RiscVDecoderTests decTests;

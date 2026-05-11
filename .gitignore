@@ -1,34 +1,27 @@
 ```
 # Build artifacts
-build/
-dist/
 *.o
 *.obj
 *.a
-*.lib
 *.so
 *.dll
 *.exe
 *.out
 
-# CMake
+# CMake build directories
+build/
+cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
-cmake_install.cmake
+cmake_install.manifest
 Makefile
-*_autogen/
 
 # Dependencies
-node_modules/
-.venv/
-venv/
-__pycache__/
-*.egg-info/
+.externalNativeBuild/
 
 # Logs and temp files
 *.log
 *.tmp
-*.swp
 
 # Environment
 .env
@@ -41,12 +34,12 @@ __pycache__/
 *.swp
 *.swo
 
-# Coverage
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
 
-# OS
+# OS generated files
 .DS_Store
 Thumbs.db
 ```

@@ -4,7 +4,11 @@
 #include <QObject>
 #include <QVector>
 #include <QString>
+#include <QHash>
 #include <cstdint>
+
+// Forward declaration para evitar include circular
+// QHash é declarado em <QHash> que já está incluído acima
 
 /**
  * @brief Implementação do Register File para RISC-V RV32I

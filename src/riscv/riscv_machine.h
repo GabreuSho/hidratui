@@ -61,14 +61,14 @@ public:
     /**
      * @brief Realiza um passo de simulação completo
      * 
-     * Override para implementar o ciclo single-cycle RISC-V:
+     * Reimplementa o método da classe Machine para implementar o ciclo single-cycle RISC-V:
      * 1. Fetch: Busca instrução da memória (4 bytes)
      * 2. Decode: Decodifica usando RiscVDecoder
      * 3. Execute: Executa na ALU
      * 4. Memory: Acessa memória se load/store
      * 5. Writeback: Escreve resultado no register file
      */
-    void step() override;
+    void step();  // Reimplementação do método da base (não é virtual)
     
     /**
      * @brief Inicializa a máquina RISC-V
@@ -87,7 +87,7 @@ public:
      * Zera todos os registradores (exceto x0 que é sempre 0),
      * reseta PC para endereço inicial, limpa flags.
      */
-    void reset() override;
+    void reset();  // Reimplementação do método da base (não é virtual)
     
     /**
      * @brief Limpa todos os dados da máquina
@@ -103,6 +103,43 @@ public:
      */
     RiscVRegisterFile& getRegisterFile() { return regFile_; }
     const RiscVRegisterFile& getRegisterFile() const { return regFile_; }
+    
+    //////////////////////////////////////////////////
+    // Convenience methods para testes
+    //////////////////////////////////////////////////
+    
+    /**
+     * @brief Lê valor de um registrador
+     * @param regId ID do registrador (0-31)
+     * @return Valor do registrador
+     */
+    uint32_t readRegister(int regId) { return regFile_.readRegister(regId); }
+    
+    /**
+     * @brief Escreve valor em um registrador
+     * @param regId ID do registrador (0-31)
+     * @param value Valor a escrever
+     * @return true se escrito com sucesso, false se falhar (ex: x0)
+     */
+    bool writeRegister(int regId, uint32_t value) { return regFile_.writeRegister(regId, value); }
+    
+    /**
+     * @brief Lê palavra da memória
+     * @param addr Endereço (deve ser alinhado a 4 bytes)
+     * @return Valor lido
+     */
+    uint32_t readMemory(uint32_t addr) { return memory_[addr / 4]; }
+    
+    /**
+     * @brief Escreve palavra na memória
+     * @param addr Endereço (deve ser alinhado a 4 bytes)
+     * @param value Valor a escrever
+     */
+    void writeMemory(uint32_t addr, uint32_t value) { 
+        if (addr % 4 == 0 && addr < memorySize_) {
+            memory_[addr / 4] = value;
+        }
+    }
     
     /**
      * @brief Obtém a última instrução decodificada
@@ -134,7 +171,7 @@ public:
      * em componente separado (RiscVAssembler). Este método é stub
      * para compatibilidade com interface Machine.
      */
-    void assemble(QString sourceCode) override;
+    void assemble(QString sourceCode);  // Reimplementação do método da base (não é virtual)
 
 signals:
     /**
