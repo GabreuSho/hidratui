@@ -37,6 +37,7 @@ private:
     std::string format_value(int value) const;
     std::string get_register_description(const std::string& name) const;
     MachineConfig get_machine_config() const;
+  bool is32BitMachine() const;
 };
 
 } // namespace hidra::tui::panels

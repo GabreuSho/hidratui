@@ -44,6 +44,7 @@ class MemoryPanel {
 
   ftxui::Element render_row(int address, bool is_pc);
   std::string format_cell(int value, bool hex, bool decimal) const;
+  bool is32BitMachine() const;
 };
 
 }  // namespace hidra::tui::panels

@@ -15,6 +15,11 @@ MachineConfig RegistersPanel::get_machine_config() const {
   return MachineConfigProvider::getConfig(config_.machine_type);
 }
 
+bool RegistersPanel::is32BitMachine() const {
+  if (!machine_) return false;
+  return machine_->getMemorySize() >= 65536;
+}
+
 Element RegistersPanel::render() const {
   if (!machine_)
     return text("[sem máquina]") | border;
@@ -44,7 +49,8 @@ Element RegistersPanel::render_all_registers() const {
   if (!config.registers.empty()) {
     for (const auto &reg_name : config.registers) {
       try {
-        int val = machine_->getRegisterValue(QString::fromStdString(reg_name));
+        int val =
+            machine_->getRegisterValue(QString::fromStdString(reg_name));
         regs.push_back(
             render_register(reg_name, val, get_register_description(reg_name)));
       } catch (...) {
@@ -73,15 +79,27 @@ Element RegistersPanel::render_all_registers() const {
 
 Element RegistersPanel::render_register(const std::string &name, int value,
                                         const std::string &description) const {
+  bool large = is32BitMachine();
   std::ostringstream oss;
-  oss << std::setw(3) << std::setfill(' ') << value;
+
+  if (large) {
+    if (config_.show_hex) {
+      oss << "0x" << std::hex << std::setw(8) << std::setfill('0')
+          << (unsigned int)value;
+    } else {
+      oss << std::dec << value;
+    }
+  } else {
+    oss << std::setw(3) << std::setfill(' ') << value;
+  }
 
   // ✅ FTXUI v5: agrupar elementos em hbox com Elements{}
   Elements row;
-  row.push_back(text(name + ": ") | dim | size(WIDTH, EQUAL, 6));
+  int name_width = large ? 8 : 6;
+  row.push_back(text(name + ": ") | dim | size(WIDTH, EQUAL, name_width));
   row.push_back(text(oss.str()) | bold | color(Color::Cyan));
-
-  if (!description.empty()) {
+  if (!description.empty() && !large) {
+    // Only show descriptions for 8-bit machines (RV32IM has too many regs)
     row.push_back(text(" ") | dim);
     row.push_back(text("(" + description + ")") | dim);
   }
@@ -129,7 +147,7 @@ Element RegistersPanel::render_counters() const {
       hbox(Elements{text("Instruções: ") | dim,
                     text(std::to_string(machine_->getInstructionCount())) |
                         color(Color::Green) | bold,
-                    text("  ") | dim, text("Acessos: ") | dim,
+                    text(" ") | dim, text("Acessos: ") | dim,
                     text(std::to_string(machine_->getAccessCount())) |
                         color(Color::Magenta) | bold})});
 }
@@ -145,8 +163,7 @@ std::string RegistersPanel::format_value(int value) const {
   return oss.str();
 }
 
-std::string
-RegistersPanel::get_register_description(const std::string &name) const {
+std::string RegistersPanel::get_register_description(const std::string &name) const {
   MachineConfig config = get_machine_config();
   auto it = config.register_descriptions.find(name);
   if (it != config.register_descriptions.end())
