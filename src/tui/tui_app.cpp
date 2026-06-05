@@ -17,6 +17,7 @@
 #include "machines/ramsesmachine.h"
 #include "machines/regmachine.h"
 #include "machines/voltamachine.h"
+#include "machines/rv32immachine.h"
 #include "tui/layout.h"
 #include "tui/panels/controls_panel.h"
 #include "tui/panels/memory_panel.h"
@@ -37,6 +38,8 @@ TuiApp::TuiApp(const std::string& machine_type) : machine_type_(machine_type) {
     machine_ = std::make_unique<RegMachine>();
   else if (machine_type == "volta")
     machine_ = std::make_unique<VoltaMachine>();
+    else if (machine_type == "rv32im")
+        machine_ = std::make_unique<RV32IMMachine>();
   else
     throw std::runtime_error("Máquina não suportada: " + machine_type);
 

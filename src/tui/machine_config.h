@@ -26,6 +26,7 @@ private:
     static MachineConfig createPitagorasConfig();
     static MachineConfig createCromagConfig();
     static MachineConfig createQueopsConfig();
+static MachineConfig createRV32IMConfig();
 };
 
 } // namespace hidra::tui

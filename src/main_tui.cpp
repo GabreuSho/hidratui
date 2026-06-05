@@ -7,7 +7,7 @@
 
 void print_usage(const char *program) {
   std::cout << "Uso: " << program << " [máquina] [arquivo.asm]\n"
-            << "Máquinas: neander, ahmes, ramses, reg, volta, pericles\n"
+            << "Máquinas: neander, ahmes, ramses, reg, volta, pericles, rv32im\n"
             << "Exemplo: " << program << " ramses programa.rad\n";
 }
 
