@@ -42,3 +42,6 @@ target_link_libraries(hidra-tui PRIVATE hidratui)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(hidratui PRIVATE pthread)
 endif()
+
+# ============ TESTS ============
+add_subdirectory(src/tests/rv32imtest)
