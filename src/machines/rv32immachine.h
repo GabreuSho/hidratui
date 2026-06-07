@@ -20,8 +20,8 @@ public:
     /// RISC-V uses 32-bit fixed-length instructions,
     /// so the fetch/decode/execute pipeline differs
     /// entirely from the 8-bit variable-length system.
-    void step();
-    void fetchInstruction();
+    void step() override;
+    void fetchInstruction() override;
     void decodeInstruction() override;
     void executeInstruction() override;
 

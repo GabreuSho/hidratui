@@ -50,9 +50,9 @@ public:
     // Step
     //////////////////////////////////////////////////
     ///Do a step of the simulation
-    void step();
+    virtual void step();
     ///Get next instruction
-    void fetchInstruction();
+    virtual void fetchInstruction();
     ///Decode the instruction
     virtual void decodeInstruction();
     ///Execute the instruction
