@@ -3,6 +3,7 @@
 #include <QString>
 #include <iostream>
 #include "machines/rv32immachine.h"
+#include "tui/machine_config.h"
 
 static void runSteps(RV32IMMachine &machine, int maxSteps = 30) {
     machine.setRunning(true);
@@ -267,6 +268,105 @@ ecall
     std::cout << " PASS" << std::endl; return true;
 }
 
+//////////////////////////////////////////////////
+// Test 13: Virtual dispatch via Machine* — simulate registers_panel behavior
+//////////////////////////////////////////////////
+static bool test_virtual_dispatch_via_base() {
+    std::cout << "\n=== Test 13: Virtual dispatch (registers_panel simulation) ===" << std::endl;
+    RV32IMMachine rv;
+    Machine* m = &rv;  // TUI uses Machine*
+
+    // Simulate exactly what RegistersPanel::render_all_registers() does
+    // It uses MachineConfigProvider::getConfig("rv32im")
+    // But we'll test the critical path: getRegisterValue for each name
+    
+    std::vector<std::string> reg_names = {
+        "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0/fp", "s1",
+        "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
+        "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11",
+        "t3", "t4", "t5", "t6", "PC"
+    };
+    
+    int shown = 0;
+    int exceptions = 0;
+    for (const auto& name : reg_names) {
+        try {
+            int val = m->getRegisterValue(QString::fromStdString(name));
+            (void)val;
+            shown++;
+        } catch (...) {
+            std::cout << "  EXCEPTION for: " << name << std::endl;
+            exceptions++;
+        }
+    }
+    
+    std::cout << "  shown=" << shown << " exceptions=" << exceptions << " total=" << reg_names.size() << std::endl;
+    
+    if (exceptions > 0) {
+        std::cout << " FAIL: " << exceptions << " register names threw exceptions" << std::endl;
+        return false;
+    }
+    if (shown != (int)reg_names.size()) {
+        std::cout << " FAIL: only " << shown << "/" << reg_names.size() << " shown" << std::endl;
+        return false;
+    }
+    
+    // Also test hasRegister for common 8-bit names (fallback path)
+    if (m->hasRegister("ACC")) { std::cout << " FAIL: hasRegister(ACC)=true\n"; return false; }
+    if (!m->hasRegister("PC")) { std::cout << " FAIL: hasRegister(PC)=false\n"; return false; }
+    if (!m->hasRegister("SP")) { std::cout << " FAIL: hasRegister(SP)=false\n"; return false; }
+    
+    // Verify step() dispatch (PC increments by 4)
+    m->assemble("li t0, 42\necall\n");
+    m->updateInstructionStrings();
+    m->setRunning(true);
+    m->step();
+    int pc = m->getPCValue();
+    if (pc != 4) { std::cout << " FAIL: PC=" << pc << " expected 4 after step\n"; return false; }
+    
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 14: MachineConfig for RV32IM
+//////////////////////////////////////////////////
+static bool test_machine_config_rv32im() {
+    std::cout << "\n=== Test 14: MachineConfig RV32IM ===" << std::endl;
+    
+    // Test exact same call as RegistersPanel::get_machine_config()
+    hidra::tui::MachineConfig config = hidra::tui::MachineConfigProvider::getConfig("rv32im");
+    
+    std::cout << "  config.name=" << config.name << std::endl;
+    std::cout << "  config.registers.size()=" << config.registers.size() << std::endl;
+    std::cout << "  config.flags.size()=" << config.flags.size() << std::endl;
+    
+    if (config.registers.empty()) {
+        std::cout << " FAIL: registers is EMPTY — this causes TUI to fall back to 8-bit common_regs!" << std::endl;
+        return false;
+    }
+    
+    if (config.registers.size() != 33) {
+        std::cout << " FAIL: expected 33 registers, got " << config.registers.size() << std::endl;
+        return false;
+    }
+    
+    if (config.name != "RV32IM") {
+        std::cout << " FAIL: name=" << config.name << " expected RV32IM" << std::endl;
+        return false;
+    }
+    
+    // Also test "rvm" alias
+    hidra::tui::MachineConfig config2 = hidra::tui::MachineConfigProvider::getConfig("rvm");
+    if (config2.registers.size() != 33) {
+        std::cout << " FAIL: 'rvm' alias gives " << config2.registers.size() << " registers" << std::endl;
+        return false;
+    }
+    
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     std::cout << "\n=== RV32IM Test Suite ===\n" << std::endl;
@@ -286,6 +386,8 @@ int main(int argc, char *argv[]) {
     run(test_shifts);
     run(test_branch_large_li);
     run(test_div_rem);
+    run(test_virtual_dispatch_via_base);
+    run(test_machine_config_rv32im);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;
