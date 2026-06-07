@@ -378,7 +378,7 @@ Element TuiApp::render() {
                             .show_decimal = true,
                             .show_disassembly = true,
                             .follow_pc = layout_config_.follow_pc});
-  registers_panel_.set_config({.show_hex = layout_config_.show_hex});
+  registers_panel_.set_config({.show_hex = layout_config_.show_hex, .machine_type = machine_type_});
 
   return vbox(Elements{
       render_header(),
