@@ -62,7 +62,7 @@ TuiApp::TuiApp(const std::string& machine_type) : machine_type_(machine_type) {
 
   layout_config_.show_hex = false;
   layout_config_.follow_pc = true;
-  layout_config_.registers_panel_width = 32;
+  layout_config_.registers_panel_width = 40;
   layout_config_.output_panel_height = 5;
 }
 
@@ -355,6 +355,15 @@ void TuiApp::run() {
       return true;
     }
 
+      // Ctrl+Arrow: scroll registradores
+      if (event == Event::ArrowUpCtrl) {
+        registers_panel_.scroll_up(1);
+        return true;
+      }
+      if (event == Event::ArrowDownCtrl) {
+        registers_panel_.scroll_down(1);
+        return true;
+      }
     return false;  // Evento não tratado
   });
 
@@ -379,6 +388,7 @@ Element TuiApp::render() {
                             .show_disassembly = true,
                             .follow_pc = layout_config_.follow_pc});
   registers_panel_.set_config({.show_hex = layout_config_.show_hex, .machine_type = machine_type_});
+  registers_panel_.set_visible_rows(18);
 
   return vbox(Elements{
       render_header(),
