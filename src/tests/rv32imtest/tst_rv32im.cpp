@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QString>
 #include <iostream>
+#include <iomanip>
 #include "machines/rv32immachine.h"
 #include "tui/machine_config.h"
 
@@ -11,7 +12,7 @@ static void runSteps(RV32IMMachine &machine, int maxSteps = 30) {
         machine.step();
 }
 
-static void printInstrs(RV32IMMachine &machine, int start, int count) {
+static void printInstrs(RV32IMMachine &machine, int count, int start = RV32IMMachine::TEXT_BASE) {
     for (int i = 0; i < count; i++) {
         int addr = start + i * 4;
         QString instr = machine.getInstructionString(addr);
@@ -28,7 +29,7 @@ static bool test_basic() {
     RV32IMMachine m;
     m.assemble("li t0, 42\necall\n");
     if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
-    m.updateInstructionStrings(); printInstrs(m, 0, 4);
+    m.updateInstructionStrings(); printInstrs(m, 4);
     runSteps(m);
     int v = m.getRegisterValueByName("t0");
     if (v != 42) { std::cout << " FAIL: t0=" << v << " expected 42\n"; return false; }
@@ -43,7 +44,7 @@ static bool test_store_load() {
     RV32IMMachine m;
     m.assemble("li t0, 100\naddi sp, x0, 256\nsw t0, 0(sp)\nlw t1, 0(sp)\necall\n");
     if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
-    m.updateInstructionStrings(); printInstrs(m, 0, 6);
+    m.updateInstructionStrings(); printInstrs(m, 6);
     runSteps(m);
     int v = m.getRegisterValueByName("t1");
     if (v != 100) { std::cout << " FAIL: t1=" << v << " expected 100\n"; return false; }
@@ -57,7 +58,6 @@ static bool test_branch() {
     std::cout << "\n=== Test 3: Branch (beq) ===" << std::endl;
     RV32IMMachine m;
     QString code = R"(
-.org 0x0000
 li t0, 5
 li t1, 5
 beq t0, t1, equal
@@ -70,7 +70,7 @@ ecall
 )";
     m.assemble(code);
     if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
-    m.updateInstructionStrings(); printInstrs(m, 0, 8);
+    m.updateInstructionStrings(); printInstrs(m, 8);
     runSteps(m);
     int v = m.getRegisterValueByName("t2");
     if (v != 1) { std::cout << " FAIL: t2=" << v << " expected 1\n"; return false; }
@@ -84,7 +84,6 @@ static bool test_arithmetic() {
     std::cout << "\n=== Test 4: Arithmetic ===" << std::endl;
     RV32IMMachine m;
     QString code = R"(
-.org 0x0000
 li t0, 10
 li t1, 3
 add t2, t0, t1
@@ -108,7 +107,6 @@ static bool test_jal_jalr() {
     std::cout << "\n=== Test 5: JAL/JALR ===" << std::endl;
     RV32IMMachine m;
     QString code = R"(
-.org 0x0000
 jal ra, subfunc
 ecall
 subfunc:
@@ -171,7 +169,6 @@ static bool test_pseudo() {
     std::cout << "\n=== Test 9: Pseudo-instructions ===" << std::endl;
     RV32IMMachine m;
     QString code = R"(
-.org 0x0000
 li t0, 42
 mv t1, t0
 nop
@@ -199,7 +196,6 @@ static bool test_shifts() {
     std::cout << "\n=== Test 10: Shifts ===" << std::endl;
     RV32IMMachine m;
     QString code = R"(
-.org 0x0000
 li t0, 8
 slli t1, t0, 2
 srli t2, t1, 1
@@ -225,7 +221,6 @@ static bool test_branch_large_li() {
     std::cout << "\n=== Test 11: Branch with large li ===" << std::endl;
     RV32IMMachine m;
     QString code = R"(
-.org 0x0000
 li t0, 100000
 li t1, 5
 beq t0, t1, equal
@@ -238,7 +233,7 @@ ecall
 )";
     m.assemble(code);
     if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
-    m.updateInstructionStrings(); printInstrs(m, 0, 12);
+    m.updateInstructionStrings(); printInstrs(m, 12);
     runSteps(m);
     int v = m.getRegisterValueByName("t2");
     // t0=100000 != t1=5, so branch NOT taken, t2=0
@@ -253,7 +248,6 @@ static bool test_div_rem() {
     std::cout << "\n=== Test 12: DIV/REM ===" << std::endl;
     RV32IMMachine m;
     QString code = R"(
-.org 0x0000
 li t0, 7
 li t1, 3
 div t2, t0, t1
@@ -322,10 +316,12 @@ static bool test_virtual_dispatch_via_base() {
     m->setRunning(true);
     m->step();
     int pc = m->getPCValue();
-    if (pc != 4) { std::cout << " FAIL: PC=" << pc << " expected 4 after step\n"; return false; }
-    
-    std::cout << " PASS" << std::endl;
-    return true;
+        if (pc != RV32IMMachine::TEXT_BASE + 4) {
+    std::cout << " FAIL: PC=" << pc << " expected TEXT_BASE+4 after step" << std::endl;
+    return false;
+  }
+  std::cout << " PASS" << std::endl;
+  return true;
 }
 
 //////////////////////////////////////////////////
@@ -367,6 +363,105 @@ static bool test_machine_config_rv32im() {
     return true;
 }
 
+//////////////////////////////////////////////////
+// Test 15: .text / .data sections
+//////////////////////////////////////////////////
+static bool test_text_data_sections()
+{
+  std::cout << "\n=== Test 15: .text / .data sections ===" << std::endl;
+
+  // Code without explicit .text should still go to TEXT_BASE
+  {
+    RV32IMMachine m;
+    m.assemble("li t0, 42\necall\n");
+    int pc = m.getPCValue();
+    if (pc != RV32IMMachine::TEXT_BASE) {
+      std::cout << " FAIL: PC=0x" << std::hex << pc << " expected 0x" << RV32IMMachine::TEXT_BASE << std::dec << std::endl;
+      return false;
+    }
+    // addi t0, x0, 42 -> byte0 = rd[1:0]|opcode = 0x93
+    int b0 = m.getMemoryValue(RV32IMMachine::TEXT_BASE);
+    if (b0 != 0x93) {
+      std::cout << " FAIL: byte at TEXT_BASE=0x" << std::hex << b0 << " expected 0x93" << std::dec << std::endl;
+      return false;
+    }
+  }
+
+  // .text and .data with explicit directives
+  {
+    RV32IMMachine m;
+    m.assemble(".text\nli t0, 42\necall\n.data\n.word 0xDEADBEEF");
+    if (!m.getBuildSuccessful()) {
+      std::cout << " FAIL: build unsuccessful" << std::endl;
+      return false;
+    }
+    int pc = m.getPCValue();
+    if (pc != RV32IMMachine::TEXT_BASE) {
+      std::cout << " FAIL: PC=0x" << std::hex << pc << " expected 0x" << RV32IMMachine::TEXT_BASE << std::dec << std::endl;
+      return false;
+    }
+    int b0 = m.getMemoryValue(RV32IMMachine::TEXT_BASE);
+    if (b0 != 0x93) {
+      std::cout << " FAIL: byte at TEXT_BASE=0x" << std::hex << b0 << " expected 0x93" << std::dec << std::endl;
+      return false;
+    }
+    // Data at DATA_BASE should be 0xEF (little-endian of 0xDEADBEEF)
+    int db0 = m.getMemoryValue(RV32IMMachine::DATA_BASE);
+    if (db0 != 0xEF) {
+      std::cout << " FAIL: byte at DATA_BASE=0x" << std::hex << db0 << " expected 0xEF" << std::dec << std::endl;
+      return false;
+    }
+  }
+
+  // Switch between .text and .data multiple times
+  {
+    RV32IMMachine m;
+    m.assemble(".text\nli t0, 1\n.data\n.word 100\n.text\nli t1, 2");
+    if (!m.getBuildSuccessful()) {
+      std::cout << " FAIL: build unsuccessful (multi-section)" << std::endl;
+      return false;
+    }
+    int b0_second = m.getMemoryValue(RV32IMMachine::TEXT_BASE + 4);
+    // li t1, 2 -> addi t1, x0, 2 -> byte0 = (6<<7)|0x13
+    int expected = 0x13;  // byte0 of addi t1,x0,2: rd[0]=0, opcode=0x13
+    if (b0_second != expected) {
+      std::cout << " FAIL: second .text byte=0x" << std::hex << b0_second << " expected 0x" << expected << std::dec << std::endl;
+      return false;
+    }
+  }
+
+  std::cout << " PASS" << std::endl;
+  return true;
+}
+
+
+//////////////////////////////////////////////////
+// Test 16: SP and GP initialization
+//////////////////////////////////////////////////
+static bool test_sp_gp_init() {
+    std::cout << "\n=== Test 16: SP/GP initialization ===" << std::endl;
+
+    RV32IMMachine m;
+    m.assemble("li t0, 42\necall\n");
+
+    int sp = m.getRegisterValueByName("sp");
+    int gp = m.getRegisterValueByName("gp");
+
+    if (sp != RV32IMMachine::SP_INIT) {
+        std::cout << " FAIL: SP=0x" << std::hex << sp << " expected 0x"
+                  << RV32IMMachine::SP_INIT << std::dec << std::endl;
+        return false;
+    }
+    if (gp != RV32IMMachine::DATA_BASE) {
+        std::cout << " FAIL: GP=0x" << std::hex << gp << " expected 0x"
+                  << RV32IMMachine::DATA_BASE << std::dec << std::endl;
+        return false;
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     std::cout << "\n=== RV32IM Test Suite ===\n" << std::endl;
@@ -388,6 +483,8 @@ int main(int argc, char *argv[]) {
     run(test_div_rem);
     run(test_virtual_dispatch_via_base);
     run(test_machine_config_rv32im);
+    run(test_text_data_sections);
+    run(test_sp_gp_init);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;

@@ -11,6 +11,13 @@
 
 class RV32IMMachine : public Machine {
 public:
+  //////////////////////////////////////////////////
+  // Memory layout constants (RARS-compatible)
+  //////////////////////////////////////////////////
+  static constexpr int TEXT_BASE  = 0x00400000;
+  static constexpr int DATA_BASE  = 0x10040000;
+  static constexpr int SP_INIT    = 0x7FFFFFFC;
+
     explicit RV32IMMachine(QObject *parent = 0);
     ~RV32IMMachine();
 
@@ -183,6 +190,11 @@ protected:
     //////////////////////////////////////////////////
     bool buildSuccessfulRV32_;
     int firstErrorLineRV32_;
+  //////////////////////////////////////////////////
+  // Section tracking
+  //////////////////////////////////////////////////
+  int textCurrentAddr_;
+  int dataCurrentAddr_;
 
     //////////////////////////////////////////////////
     // Helper methods

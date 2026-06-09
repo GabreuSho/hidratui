@@ -941,9 +941,9 @@ void RV32IMMachine::assemble(QString sourceCode)
         if (labelPCMap.contains(t.toLower()))
             return labelPCMap[t.toLower()];
         if (t.startsWith("0x", Qt::CaseInsensitive)) {
-            int val = t.toInt(&ok, 16);
+            uint val = t.toUInt(&ok, 16);
             if (!ok) { ok = false; return 0; }
-            return val;
+            return static_cast<int>(val);
         }
         int val = t.toInt(&ok, 10);
         if (!ok) { ok = false; return 0; }
@@ -963,7 +963,7 @@ void RV32IMMachine::assemble(QString sourceCode)
             bool ok;
             int val;
             if (immStr.startsWith("0x", Qt::CaseInsensitive))
-                val = immStr.mid(2).toInt(&ok, 16);
+                val = static_cast<int>(immStr.mid(2).toUInt(&ok, 16));
             else
                 val = immStr.toInt(&ok, 10);
             if (ok && fitsIn12(val)) return 4;
@@ -977,7 +977,10 @@ void RV32IMMachine::assemble(QString sourceCode)
     //////////////////////////////////////////////////
     // FIRST PASS: Scan for labels, calculate addresses
     //////////////////////////////////////////////////
-    int currentAddr = 0;
+    enum { TEXT_SECTION, DATA_SECTION } section = TEXT_SECTION;
+    int textCurrentAddr = TEXT_BASE;
+    int dataCurrentAddr = DATA_BASE;
+    int currentAddr = textCurrentAddr;
 
     for (int lineNumber = 0; lineNumber < sourceLines.size(); lineNumber++) {
         try {
@@ -1006,26 +1009,26 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (!ok || val < 0 || val % 4 != 0)
                     throw Machine::invalidAddress;
                 currentAddr = val;
-            } else if (mnemonic == ".word") {
+                    } else if (mnemonic == ".word") {
                 currentAddr += 4;
-            } else if (mnemonic == ".half") {
+                    } else if (mnemonic == ".half") {
                 currentAddr += 2;
-            } else if (mnemonic == ".byte") {
+                    } else if (mnemonic == ".byte") {
                 currentAddr += 1;
-            } else if (mnemonic == ".align") {
+                    } else if (mnemonic == ".align") {
                 bool ok;
                 int align = parseImm(arguments, ok);
                 if (!ok || align < 0) throw Machine::invalidValue;
                 int alignment = 1 << align;
                 if (currentAddr % alignment != 0)
                     currentAddr += alignment - (currentAddr % alignment);
-            } else if (mnemonic == ".text" || mnemonic == ".data" ||
+                        } else if (mnemonic == ".text" || mnemonic == ".data" ||
                        mnemonic == ".globl" || mnemonic == ".global" ||
                        mnemonic == ".section") {
                 // No-op
             } else {
                 currentAddr += pseudoSize(mnemonic, arguments);
-            }
+                    }
         } catch (Machine::ErrorCode errorCode) {
             if (firstErrorLineRV32_ == -1)
                 firstErrorLineRV32_ = lineNumber;
@@ -1039,7 +1042,16 @@ void RV32IMMachine::assemble(QString sourceCode)
     //////////////////////////////////////////////////
     // SECOND PASS: Generate machine code
     //////////////////////////////////////////////////
-    currentAddr = 0;
+    textCurrentAddr = TEXT_BASE;
+    dataCurrentAddr = DATA_BASE;
+    currentAddr = textCurrentAddr;
+
+    auto advanceSectionAddr = [&](int bytes) {
+        currentAddr += bytes;
+        if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
+        else dataCurrentAddr = currentAddr;
+    };
+
     assemblerMemory_.clear();
 
     for (int lineNumber = 0; lineNumber < sourceLines.size(); lineNumber++) {
@@ -1070,46 +1082,69 @@ void RV32IMMachine::assemble(QString sourceCode)
             if (mnemonic == ".org") {
                 bool ok;
                 currentAddr = parseImm(arguments, ok);
-                if (!ok) throw Machine::invalidAddress;
+                if (!ok)
+                    throw Machine::invalidAddress;
+                if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
+                else dataCurrentAddr = currentAddr;
                 continue;
             }
             if (mnemonic == ".word") {
                 bool ok;
                 int val = parseImm(arguments, ok);
-                if (!ok) throw Machine::invalidValue;
+                if (!ok)
+                    throw Machine::invalidValue;
                 writeWordToAssembler(currentAddr, static_cast<uint32_t>(val));
                 currentAddr += 4;
+                if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
+                else dataCurrentAddr = currentAddr;
                 continue;
             }
             if (mnemonic == ".half") {
                 bool ok;
                 int val = parseImm(arguments, ok);
-                if (!ok) throw Machine::invalidValue;
-                assemblerMemory_[currentAddr]     = static_cast<uint8_t>(val & 0xFF);
+                if (!ok)
+                    throw Machine::invalidValue;
+                assemblerMemory_[currentAddr] = static_cast<uint8_t>(val & 0xFF);
                 assemblerMemory_[currentAddr + 1] = static_cast<uint8_t>((val >> 8) & 0xFF);
                 currentAddr += 2;
+                if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
+                else dataCurrentAddr = currentAddr;
                 continue;
             }
             if (mnemonic == ".byte") {
                 bool ok;
                 int val = parseImm(arguments, ok);
-                if (!ok) throw Machine::invalidValue;
+                if (!ok)
+                    throw Machine::invalidValue;
                 assemblerMemory_[currentAddr] = static_cast<uint8_t>(val & 0xFF);
                 currentAddr += 1;
+                if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
+                else dataCurrentAddr = currentAddr;
                 continue;
             }
             if (mnemonic == ".align") {
                 bool ok;
                 int align = parseImm(arguments, ok);
-                if (!ok) throw Machine::invalidValue;
+                if (!ok)
+                    throw Machine::invalidValue;
                 int alignment = 1 << align;
                 if (currentAddr % alignment != 0)
                     currentAddr += alignment - (currentAddr % alignment);
+                if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
+                else dataCurrentAddr = currentAddr;
                 continue;
             }
-            if (mnemonic == ".text" || mnemonic == ".data" ||
-                mnemonic == ".globl" || mnemonic == ".global" ||
-                mnemonic == ".section")
+            if (mnemonic == ".text") {
+                section = TEXT_SECTION;
+                currentAddr = textCurrentAddr;
+                continue;
+            }
+            if (mnemonic == ".data") {
+                section = DATA_SECTION;
+                currentAddr = dataCurrentAddr;
+                continue;
+            }
+            if (mnemonic == ".globl" || mnemonic == ".global" || mnemonic == ".section")
                 continue;
 
             //////////////////////////////////////////////////
@@ -1117,56 +1152,56 @@ void RV32IMMachine::assemble(QString sourceCode)
             //////////////////////////////////////////////////
             if (mnemonic == "nop") {
                 writeWordToAssembler(currentAddr, encodeI(0, 0, 0, 0, 0x13));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "mv") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeI(0, rs, 0, rd, 0x13));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "not") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeI(-1, rs, 4, rd, 0x13));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "neg") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeR(0x20, rs, 0, 0, rd, 0x33));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "seqz") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeI(1, rs, 3, rd, 0x13));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "snez") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeR(0, rs, 0, 3, rd, 0x33));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "sltz") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeR(0, 0, rs, 2, rd, 0x33));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "sgtz") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeR(0, rs, 0, 2, rd, 0x33));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "beqz") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
@@ -1175,7 +1210,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (assemblerLabels_.contains(args[1].trimmed().toLower()))
                     offset = offset - currentAddr;
                 writeWordToAssembler(currentAddr, encodeB(offset, 0, rs, 0, 0x63));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "bnez") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
@@ -1184,7 +1219,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (assemblerLabels_.contains(args[1].trimmed().toLower()))
                     offset = offset - currentAddr;
                 writeWordToAssembler(currentAddr, encodeB(offset, 0, rs, 1, 0x63));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "blez") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
@@ -1193,7 +1228,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (assemblerLabels_.contains(args[1].trimmed().toLower()))
                     offset = offset - currentAddr;
                 writeWordToAssembler(currentAddr, encodeB(offset, rs, 0, 5, 0x63));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "bgez") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
@@ -1202,7 +1237,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (assemblerLabels_.contains(args[1].trimmed().toLower()))
                     offset = offset - currentAddr;
                 writeWordToAssembler(currentAddr, encodeB(offset, 0, rs, 5, 0x63));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "bltz") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
@@ -1211,7 +1246,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (assemblerLabels_.contains(args[1].trimmed().toLower()))
                     offset = offset - currentAddr;
                 writeWordToAssembler(currentAddr, encodeB(offset, 0, rs, 4, 0x63));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "bgtz") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
@@ -1220,7 +1255,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (assemblerLabels_.contains(args[1].trimmed().toLower()))
                     offset = offset - currentAddr;
                 writeWordToAssembler(currentAddr, encodeB(offset, rs, 0, 4, 0x63));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "j") {
                 if (args.size() != 1) throw Machine::wrongNumberOfArguments;
@@ -1228,7 +1263,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (assemblerLabels_.contains(args[0].trimmed().toLower()))
                     offset = offset - currentAddr;
                 writeWordToAssembler(currentAddr, encodeJ(offset, 0, 0x6F));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "jal") {
                 if (args.size() == 1) {
@@ -1236,14 +1271,14 @@ void RV32IMMachine::assemble(QString sourceCode)
                     if (assemblerLabels_.contains(args[0].trimmed().toLower()))
                         offset = offset - currentAddr;
                     writeWordToAssembler(currentAddr, encodeJ(offset, 1, 0x6F));
-                    currentAddr += 4;
+                    advanceSectionAddr(4);
                 } else if (args.size() == 2) {
                     int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                     bool ok; int offset = parseImm(args[1], ok); if (!ok) throw Machine::invalidArgument;
                     if (assemblerLabels_.contains(args[1].trimmed().toLower()))
                         offset = offset - currentAddr;
                     writeWordToAssembler(currentAddr, encodeJ(offset, rd, 0x6F));
-                    currentAddr += 4;
+                    advanceSectionAddr(4);
                 } else throw Machine::wrongNumberOfArguments;
                 continue;
             }
@@ -1251,13 +1286,13 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (args.size() != 1) throw Machine::wrongNumberOfArguments;
                 int rs = parseReg(args[0]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeI(0, rs, 0, 0, 0x67));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "jalr") {
                 if (args.size() == 1) {
                     int rs = parseReg(args[0]); if (rs < 0) throw Machine::invalidArgument;
                     writeWordToAssembler(currentAddr, encodeI(0, rs, 0, 1, 0x67));
-                    currentAddr += 4;
+                    advanceSectionAddr(4);
                 } else if (args.size() == 2) {
                     int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                     static QRegExp offsetReg("(-?\\d+)\\(([^)]+)\\)");
@@ -1269,19 +1304,19 @@ void RV32IMMachine::assemble(QString sourceCode)
                         int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                         writeWordToAssembler(currentAddr, encodeI(0, rs, 0, rd, 0x67));
                     }
-                    currentAddr += 4;
+                    advanceSectionAddr(4);
                 } else if (args.size() == 3) {
                     int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                     int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                     bool ok; int imm = parseImm(args[2], ok); if (!ok) throw Machine::invalidArgument;
                     writeWordToAssembler(currentAddr, encodeI(imm, rs, 0, rd, 0x67));
-                    currentAddr += 4;
+                    advanceSectionAddr(4);
                 } else throw Machine::wrongNumberOfArguments;
                 continue;
             }
             if (mnemonic == "ret") {
                 writeWordToAssembler(currentAddr, encodeI(0, 1, 0, 0, 0x67));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "call") {
                 if (args.size() != 1) throw Machine::wrongNumberOfArguments;
@@ -1291,7 +1326,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 int lower = offset - (upper << 12);
                 writeWordToAssembler(currentAddr, encodeU(upper << 12, 1, 0x17));
                 writeWordToAssembler(currentAddr + 4, encodeI(lower, 1, 0, 1, 0x67));
-                currentAddr += 8; continue;
+                advanceSectionAddr(8); continue;
             }
             if (mnemonic == "tail") {
                 if (args.size() != 1) throw Machine::wrongNumberOfArguments;
@@ -1301,7 +1336,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 int lower = offset - (upper << 12);
                 writeWordToAssembler(currentAddr, encodeU(upper << 12, 6, 0x17));
                 writeWordToAssembler(currentAddr + 4, encodeI(lower, 6, 0, 0, 0x67));
-                currentAddr += 8; continue;
+                advanceSectionAddr(8); continue;
             }
             if (mnemonic == "li") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
@@ -1309,13 +1344,13 @@ void RV32IMMachine::assemble(QString sourceCode)
                 bool ok; int val = parseImm(args[1], ok); if (!ok) throw Machine::invalidValue;
                 if (fitsIn12(val)) {
                     writeWordToAssembler(currentAddr, encodeI(val, 0, 0, rd, 0x13));
-                    currentAddr += 4;
+                    advanceSectionAddr(4);
                 } else {
                     int upper = (val + 0x800) >> 12;
                     int lower = val - (upper << 12);
                     writeWordToAssembler(currentAddr, encodeU(upper << 12, rd, 0x37));
                     writeWordToAssembler(currentAddr + 4, encodeI(lower, rd, 0, rd, 0x13));
-                    currentAddr += 8;
+                    advanceSectionAddr(8);
                 }
                 continue;
             }
@@ -1328,28 +1363,28 @@ void RV32IMMachine::assemble(QString sourceCode)
                 int lower = offset - (upper << 12);
                 writeWordToAssembler(currentAddr, encodeU(upper << 12, rd, 0x17));
                 writeWordToAssembler(currentAddr + 4, encodeI(lower, rd, 0, rd, 0x13));
-                currentAddr += 8; continue;
+                advanceSectionAddr(8); continue;
             }
             if (mnemonic == "csrr") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 bool ok; int csr = parseImm(args[1], ok); if (!ok) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeI(csr, 0, 1, rd, 0x73));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "csrw" || mnemonic == "csrs") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 bool ok; int csr = parseImm(args[0], ok); if (!ok) throw Machine::invalidArgument;
                 int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeI(csr, rs, 1, 0, 0x73));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "csrc") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 bool ok; int csr = parseImm(args[0], ok); if (!ok) throw Machine::invalidArgument;
                 int rs = parseReg(args[1]); if (rs < 0) throw Machine::invalidArgument;
                 writeWordToAssembler(currentAddr, encodeI(csr, rs, 2, 0, 0x73));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
 
             //////////////////////////////////////////////////
@@ -1362,14 +1397,14 @@ void RV32IMMachine::assemble(QString sourceCode)
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 bool ok; int imm = parseImm(args[1], ok); if (!ok) throw Machine::invalidValue;
                 writeWordToAssembler(currentAddr, encodeU(imm, rd, 0x37));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "auipc") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 bool ok; int imm = parseImm(args[1], ok); if (!ok) throw Machine::invalidValue;
                 writeWordToAssembler(currentAddr, encodeU(imm, rd, 0x17));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
 
             // B-type: Branch
@@ -1390,7 +1425,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 else if (mnemonic == "bltu") funct3 = 6;
                 else if (mnemonic == "bgeu") funct3 = 7;
                 writeWordToAssembler(currentAddr, encodeB(offset, rs2, rs1, funct3, 0x63));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
 
             // I-type: Load
@@ -1418,7 +1453,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 else if (mnemonic == "lbu") funct3 = 4;
                 else if (mnemonic == "lhu") funct3 = 5;
                 writeWordToAssembler(currentAddr, encodeI(imm, rs1, funct3, rd, 0x03));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
 
             // S-type: Store
@@ -1443,7 +1478,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 else if (mnemonic == "sh") funct3 = 1;
                 else if (mnemonic == "sw") funct3 = 2;
                 writeWordToAssembler(currentAddr, encodeS(imm, rs2, rs1, funct3, 0x23));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
 
             // I-type: OP-IMM
@@ -1465,7 +1500,7 @@ void RV32IMMachine::assemble(QString sourceCode)
                 else if (mnemonic == "srli")  { funct3 = 5; imm = imm & 0x1F; }
 else if (mnemonic == "srai") { funct3 = 5; imm = (0x20 << 5) | (imm & 0x1F); }
                 writeWordToAssembler(currentAddr, encodeI(imm, rs1, funct3, rd, 0x13));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
 
             // R-type: OP (arithmetic/logic + M extension)
@@ -1500,17 +1535,17 @@ else if (mnemonic == "srai") { funct3 = 5; imm = (0x20 << 5) | (imm & 0x1F); }
                 else if (mnemonic == "rem")    { funct3 = 6; funct7_enc = 0x01; }
                 else if (mnemonic == "remu")   { funct3 = 7; funct7_enc = 0x01; }
                 writeWordToAssembler(currentAddr, encodeR(funct7_enc, rs2, rs1, funct3, rd, 0x33));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
 
             // ECALL / EBREAK
             if (mnemonic == "ecall") {
                 writeWordToAssembler(currentAddr, encodeI(0, 0, 0, 0, 0x73));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
             if (mnemonic == "ebreak") {
                 writeWordToAssembler(currentAddr, encodeI(1, 0, 0, 0, 0x73));
-                currentAddr += 4; continue;
+                advanceSectionAddr(4); continue;
             }
 
             // Unknown mnemonic
@@ -1536,6 +1571,14 @@ else if (mnemonic == "srai") { funct3 = 5; imm = (0x20 << 5) | (imm & 0x1F); }
     buildSuccessful = true;
     buildSuccessfulRV32_ = true;
     clearAfterBuild();
+
+    //////////////////////////////////////////////////
+    // RARS-compatible register initialization
+    //////////////////////////////////////////////////
+    regFile[2] = SP_INIT;    // sp
+    regFile[3] = DATA_BASE;  // gp
+    pcValue_ = TEXT_BASE;
+    setPCValue(TEXT_BASE);
 }
 void RV32IMMachine::updateInstructionStrings()
 {
