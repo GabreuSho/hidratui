@@ -146,6 +146,14 @@ RV32IMMachine::RV32IMMachine(QObject *parent)
     breakpoint = -1;
 
     //////////////////////////////////////////////////
+    // RARS-compatible register initialization
+    //////////////////////////////////////////////////
+    regFile[2] = SP_INIT;   // sp
+    regFile[3] = DATA_BASE;  // gp
+    pcValue_ = TEXT_BASE;
+    PC->setValue(TEXT_BASE);
+
+    //////////////////////////////////////////////////
     // Add dummy AddressingMode and Instruction
     //////////////////////////////////////////////////
     addressingModes.append(new AddressingMode("......00", AddressingMode::DIRECT, AddressingMode::NO_PATTERN));
@@ -446,6 +454,11 @@ void RV32IMMachine::clear()
     addressCorrespondingLabel.clear();
     running = false;
     breakpoint = -1;
+    // RARS-compatible defaults (so PC/SP/GP are never zero for RV32IM)
+    regFile[2] = SP_INIT;   // sp
+    regFile[3] = DATA_BASE;  // gp
+    pcValue_ = TEXT_BASE;
+    Machine::PC->setValue(TEXT_BASE);
 }
 
 void RV32IMMachine::clearAfterBuild()
