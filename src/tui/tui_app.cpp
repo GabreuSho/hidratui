@@ -80,7 +80,6 @@ void TuiApp::load_file(const std::string& filepath) {
 
 void TuiApp::on_file_changed() {
   file_modified_ = true;
-  do_build();
 }
 
 void TuiApp::do_build() {
@@ -137,10 +136,18 @@ void TuiApp::do_reset() {
 }
 
 void TuiApp::do_reset_pc() {
-  machine_->setPCValue(0);
-  if (machine_->hasRegister(QString("SP")))
-    machine_->setRegisterValue(QString("SP"), 0);
-  output_panel_.add_message("PC resetado para 0");
+  if (machine_->getMemorySize() >= 65536) {
+    // RV32IM: reset to RARS-compatible defaults
+    machine_->setPCValue(0x00400000);
+    if (machine_->hasRegister(QString("SP")))
+      machine_->setRegisterValue(QString("SP"), 0x7FFFFFFC);
+    output_panel_.add_message("PC resetado para 0x00400000");
+  } else {
+    machine_->setPCValue(0);
+    if (machine_->hasRegister(QString("SP")))
+      machine_->setRegisterValue(QString("SP"), 0);
+    output_panel_.add_message("PC resetado para 0");
+  }
 }
 
 void TuiApp::run() {

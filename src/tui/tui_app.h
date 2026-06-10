@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <chrono>
 #include <ftxui/dom/elements.hpp>
 #include <memory>
@@ -36,7 +37,7 @@ class TuiApp {
   std::string machine_type_;
 
   bool running_ = false;
-  bool file_modified_ = false;
+  std::atomic<bool> file_modified_{false};
   int address_go_ = 0;
   int running_steps_ = -1;
   int address_running_aux_ = 0;
