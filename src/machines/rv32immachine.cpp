@@ -458,6 +458,10 @@ void RV32IMMachine::clearAfterBuild()
     accessCount = 0;
     clearInstructionStrings();
     running = false;
+    regFile[2] = SP_INIT;   // sp
+    regFile[3] = DATA_BASE;  // gp
+    pcValue_ = TEXT_BASE;
+    Machine::PC->setValue(TEXT_BASE);
 }
 
 //////////////////////////////////////////////////
@@ -1571,14 +1575,6 @@ else if (mnemonic == "srai") { funct3 = 5; imm = (0x20 << 5) | (imm & 0x1F); }
     buildSuccessful = true;
     buildSuccessfulRV32_ = true;
     clearAfterBuild();
-
-    //////////////////////////////////////////////////
-    // RARS-compatible register initialization
-    //////////////////////////////////////////////////
-    regFile[2] = SP_INIT;    // sp
-    regFile[3] = DATA_BASE;  // gp
-    pcValue_ = TEXT_BASE;
-    setPCValue(TEXT_BASE);
 }
 void RV32IMMachine::updateInstructionStrings()
 {
