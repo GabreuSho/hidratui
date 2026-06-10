@@ -489,10 +489,17 @@ static bool test_clear_after_build_preserves_init() {
                   << " expected 0x" << RV32IMMachine::DATA_BASE << std::dec << std::endl;
         return false;
     }
-    // clear() zeros everything, then re-assemble should restore
+    // clear() resets to RARS defaults (not zero, since RV32IM should never
+    // have PC/SP at zero — even after a failed assemble)
     m.clear();
-    if (m.getPCValue() != 0 || m.getRegisterValueByName("sp") != 0) {
-        std::cout << " FAIL: clear() didn't zero PC/SP" << std::endl;
+    if (m.getPCValue() != RV32IMMachine::TEXT_BASE) {
+        std::cout << " FAIL: PC after clear=0x" << std::hex << m.getPCValue()
+                  << " expected 0x" << RV32IMMachine::TEXT_BASE << std::dec << std::endl;
+        return false;
+    }
+    if (m.getRegisterValueByName("sp") != RV32IMMachine::SP_INIT) {
+        std::cout << " FAIL: SP after clear=0x" << std::hex << m.getRegisterValueByName("sp")
+                  << " expected 0x" << RV32IMMachine::SP_INIT << std::dec << std::endl;
         return false;
     }
     m.assemble("li t1, 7\necall\n");
@@ -504,6 +511,38 @@ static bool test_clear_after_build_preserves_init() {
     if (m.getRegisterValueByName("sp") != RV32IMMachine::SP_INIT) {
         std::cout << " FAIL: SP after re-assemble=0x" << std::hex << m.getRegisterValueByName("sp")
                   << " expected 0x" << RV32IMMachine::SP_INIT << std::dec << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 18: Failed assemble preserves SP/GP/PC
+//////////////////////////////////////////////////
+static bool test_failed_assemble_preserves_init() {
+    std::cout << "\n=== Test 18: Failed assemble preserves SP/GP/PC ===" << std::endl;
+    RV32IMMachine m;
+    // .eqv is not supported — assemble will fail
+    m.assemble(".eqv len 0x10010000\n.text\nli t0, 42\necall\n");
+    if (m.getBuildSuccessful()) {
+        std::cout << " FAIL: build should have failed for .eqv" << std::endl;
+        return false;
+    }
+    // Even after failed assemble, PC/SP/GP must be RARS defaults
+    if (m.getPCValue() != RV32IMMachine::TEXT_BASE) {
+        std::cout << " FAIL: PC after failed assemble=0x" << std::hex << m.getPCValue()
+                  << " expected 0x" << RV32IMMachine::TEXT_BASE << std::dec << std::endl;
+        return false;
+    }
+    if (m.getRegisterValueByName("sp") != RV32IMMachine::SP_INIT) {
+        std::cout << " FAIL: SP after failed assemble=0x" << std::hex << m.getRegisterValueByName("sp")
+                  << " expected 0x" << RV32IMMachine::SP_INIT << std::dec << std::endl;
+        return false;
+    }
+    if (m.getRegisterValueByName("gp") != RV32IMMachine::DATA_BASE) {
+        std::cout << " FAIL: GP after failed assemble=0x" << std::hex << m.getRegisterValueByName("gp")
+                  << " expected 0x" << RV32IMMachine::DATA_BASE << std::dec << std::endl;
         return false;
     }
     std::cout << " PASS" << std::endl;
@@ -534,6 +573,7 @@ int main(int argc, char *argv[]) {
     run(test_text_data_sections);
     run(test_sp_gp_init);
     run(test_clear_after_build_preserves_init);
+    run(test_failed_assemble_preserves_init);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;
