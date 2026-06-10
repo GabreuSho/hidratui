@@ -462,6 +462,54 @@ static bool test_sp_gp_init() {
     return true;
 }
 
+//////////////////////////////////////////////////
+// Test 17: SP/GP/PC preserved through clearAfterBuild
+//////////////////////////////////////////////////
+static bool test_clear_after_build_preserves_init() {
+    std::cout << "\n=== Test 17: clearAfterBuild preserves SP/GP/PC ===" << std::endl;
+    RV32IMMachine m;
+    m.assemble("li t0, 42\necall\n");
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build unsuccessful" << std::endl;
+        return false;
+    }
+    // After assemble, SP/GP/PC should be RARS defaults
+    if (m.getPCValue() != RV32IMMachine::TEXT_BASE) {
+        std::cout << " FAIL: PC=0x" << std::hex << m.getPCValue()
+                  << " expected 0x" << RV32IMMachine::TEXT_BASE << std::dec << std::endl;
+        return false;
+    }
+    if (m.getRegisterValueByName("sp") != RV32IMMachine::SP_INIT) {
+        std::cout << " FAIL: SP=0x" << std::hex << m.getRegisterValueByName("sp")
+                  << " expected 0x" << RV32IMMachine::SP_INIT << std::dec << std::endl;
+        return false;
+    }
+    if (m.getRegisterValueByName("gp") != RV32IMMachine::DATA_BASE) {
+        std::cout << " FAIL: GP=0x" << std::hex << m.getRegisterValueByName("gp")
+                  << " expected 0x" << RV32IMMachine::DATA_BASE << std::dec << std::endl;
+        return false;
+    }
+    // clear() zeros everything, then re-assemble should restore
+    m.clear();
+    if (m.getPCValue() != 0 || m.getRegisterValueByName("sp") != 0) {
+        std::cout << " FAIL: clear() didn't zero PC/SP" << std::endl;
+        return false;
+    }
+    m.assemble("li t1, 7\necall\n");
+    if (m.getPCValue() != RV32IMMachine::TEXT_BASE) {
+        std::cout << " FAIL: PC after re-assemble=0x" << std::hex << m.getPCValue()
+                  << " expected 0x" << RV32IMMachine::TEXT_BASE << std::dec << std::endl;
+        return false;
+    }
+    if (m.getRegisterValueByName("sp") != RV32IMMachine::SP_INIT) {
+        std::cout << " FAIL: SP after re-assemble=0x" << std::hex << m.getRegisterValueByName("sp")
+                  << " expected 0x" << RV32IMMachine::SP_INIT << std::dec << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     std::cout << "\n=== RV32IM Test Suite ===\n" << std::endl;
@@ -485,6 +533,7 @@ int main(int argc, char *argv[]) {
     run(test_machine_config_rv32im);
     run(test_text_data_sections);
     run(test_sp_gp_init);
+    run(test_clear_after_build_preserves_init);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;
