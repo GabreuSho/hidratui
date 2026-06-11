@@ -549,6 +549,72 @@ static bool test_failed_assemble_preserves_init() {
     return true;
 }
 
+//////////////////////////////////////////////////
+// Test 19: Space-separated args (RARS syntax)
+//////////////////////////////////////////////////
+static bool test_space_separated_args() {
+    std::cout << "\n=== Test 19: Space-separated args ===" << std::endl;
+    RV32IMMachine m;
+    // Without commas — RARS-compatible
+    m.assemble("li t0 42\nadd t1 t0 t2\necall\n");
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build unsuccessful for space-separated args" << std::endl;
+        return false;
+    }
+    // With commas — standard
+    RV32IMMachine m2;
+    m2.assemble("li t0, 42\nadd t1, t0, t2\necall\n");
+    if (!m2.getBuildSuccessful()) {
+        std::cout << " FAIL: build unsuccessful for comma-separated args" << std::endl;
+        return false;
+    }
+    // Mixed: "addi t1,t0 3"
+    RV32IMMachine m3;
+    m3.assemble("addi t1,t0 3\necall\n");
+    if (!m3.getBuildSuccessful()) {
+        std::cout << " FAIL: build unsuccessful for mixed separators" << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 20: Labels in .data section
+//////////////////////////////////////////////////
+static bool test_data_labels() {
+    std::cout << "\n=== Test 20: Labels in .data section ===" << std::endl;
+    RV32IMMachine m;
+    m.assemble(".text\nlw t0, mydata\necall\n.data\nmydata: .word 42\n");
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build unsuccessful" << std::endl;
+        return false;
+    }
+    // mydata should be at DATA_BASE
+    int val = m.memoryReadWord(RV32IMMachine::DATA_BASE);
+    if (val != 42) {
+        std::cout << " FAIL: mydata value=" << val << " expected 42" << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 21: sw/lw with 3 args (RARS syntax)
+//////////////////////////////////////////////////
+static bool test_sw_lw_3args() {
+    std::cout << "\n=== Test 21: sw/lw with 3 args ===" << std::endl;
+    RV32IMMachine m;
+    m.assemble(".text\nli t0, 99\nsw t0 result t1\nebreak\n.data\nresult: .word 0\n");
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build unsuccessful" << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     std::cout << "\n=== RV32IM Test Suite ===\n" << std::endl;
@@ -574,6 +640,9 @@ int main(int argc, char *argv[]) {
     run(test_sp_gp_init);
     run(test_clear_after_build_preserves_init);
     run(test_failed_assemble_preserves_init);
+    run(test_space_separated_args);
+    run(test_data_labels);
+    run(test_sw_lw_3args);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;
