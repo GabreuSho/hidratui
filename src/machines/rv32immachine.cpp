@@ -999,6 +999,12 @@ void RV32IMMachine::assemble(QString sourceCode)
     int dataCurrentAddr = DATA_BASE;
     int currentAddr = textCurrentAddr;
 
+
+    auto advanceSectionAddr1 = [&](int bytes) {
+        currentAddr += bytes;
+        if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
+        else dataCurrentAddr = currentAddr;
+    };
     for (int lineNumber = 0; lineNumber < sourceLines.size(); lineNumber++) {
         try {
             QString line = sourceLines[lineNumber];
@@ -1026,25 +1032,32 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (!ok || val < 0 || val % 4 != 0)
                     throw Machine::invalidAddress;
                 currentAddr = val;
+            if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
+            else dataCurrentAddr = currentAddr;
                     } else if (mnemonic == ".word") {
-                currentAddr += 4;
+                advanceSectionAddr1(4);
                     } else if (mnemonic == ".half") {
-                currentAddr += 2;
+                advanceSectionAddr1(2);
                     } else if (mnemonic == ".byte") {
-                currentAddr += 1;
+                advanceSectionAddr1(1);
                     } else if (mnemonic == ".align") {
                 bool ok;
                 int align = parseImm(arguments, ok);
                 if (!ok || align < 0) throw Machine::invalidValue;
                 int alignment = 1 << align;
                 if (currentAddr % alignment != 0)
-                    currentAddr += alignment - (currentAddr % alignment);
-                        } else if (mnemonic == ".text" || mnemonic == ".data" ||
-                       mnemonic == ".globl" || mnemonic == ".global" ||
-                       mnemonic == ".section") {
-                // No-op
-            } else {
-                currentAddr += pseudoSize(mnemonic, arguments);
+                    advanceSectionAddr1(alignment - (currentAddr % alignment));
+    } else if (mnemonic == ".text") {
+        section = TEXT_SECTION;
+        currentAddr = textCurrentAddr;
+    } else if (mnemonic == ".data") {
+        section = DATA_SECTION;
+        currentAddr = dataCurrentAddr;
+    } else if (mnemonic == ".globl" || mnemonic == ".global" ||
+               mnemonic == ".section") {
+        // No-op
+    } else {
+                advanceSectionAddr1(pseudoSize(mnemonic, arguments));
                     }
         } catch (Machine::ErrorCode errorCode) {
             if (firstErrorLineRV32_ == -1)
@@ -1059,6 +1072,7 @@ void RV32IMMachine::assemble(QString sourceCode)
     //////////////////////////////////////////////////
     // SECOND PASS: Generate machine code
     //////////////////////////////////////////////////
+    section = TEXT_SECTION;
     textCurrentAddr = TEXT_BASE;
     dataCurrentAddr = DATA_BASE;
     currentAddr = textCurrentAddr;
@@ -1083,16 +1097,18 @@ void RV32IMMachine::assemble(QString sourceCode)
             QString mnemonic = line.section(whitespace, 0, 0).toLower();
             QString arguments = line.section(whitespace, 1);
             QStringList args;
-            if (!arguments.trimmed().isEmpty()) {
+        if (!arguments.trimmed().isEmpty()) {
+            // RARS-compatible: commas and spaces are both separators.
+            // Replace commas with spaces, then split on whitespace.
+            // Preserves "offset(base)" tokens (no commas inside them).
+            QString normalized = arguments;
+            normalized.replace(',', ' ');
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-                args = arguments.split(commaSep, Qt::SkipEmptyParts);
+            args = normalized.split(whitespace, Qt::SkipEmptyParts);
 #else
-                args = arguments.split(commaSep, QString::SkipEmptyParts);
+            args = normalized.split(whitespace, QString::SkipEmptyParts);
 #endif
-            }
-            for (int a = 0; a < args.size(); a++)
-                args[a] = args[a].trimmed();
-
+        }
             //////////////////////////////////////////////////
             // Directives
             //////////////////////////////////////////////////
@@ -1448,7 +1464,12 @@ void RV32IMMachine::assemble(QString sourceCode)
             // I-type: Load
             if (mnemonic == "lb" || mnemonic == "lh" || mnemonic == "lw" ||
                 mnemonic == "lbu" || mnemonic == "lhu") {
-                if (args.size() != 2) throw Machine::wrongNumberOfArguments;
+        if (args.size() < 2 || args.size() > 3) throw Machine::wrongNumberOfArguments;
+        // RARS syntax: lw rd, label, base -> lw rd, label(base)
+        if (args.size() == 3) {
+            args[1] = args[1] + "(" + args[2] + ")";
+            args.removeAt(2);
+        }
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 static QRegExp offsetReg("(-?\\w+)\\(([^)]+)\\)");
                 int imm = 0; int rs1 = -1;
@@ -1475,7 +1496,12 @@ void RV32IMMachine::assemble(QString sourceCode)
 
             // S-type: Store
             if (mnemonic == "sb" || mnemonic == "sh" || mnemonic == "sw") {
-                if (args.size() != 2) throw Machine::wrongNumberOfArguments;
+        if (args.size() < 2 || args.size() > 3) throw Machine::wrongNumberOfArguments;
+        // RARS syntax: sw src, label, base -> sw src, label(base)
+        if (args.size() == 3) {
+            args[1] = args[1] + "(" + args[2] + ")";
+            args.removeAt(2);
+        }
                 int rs2 = parseReg(args[0]); if (rs2 < 0) throw Machine::invalidArgument;
                 static QRegExp offsetRegS("(-?\\w+)\\(([^)]+)\\)");
                 int imm = 0; int rs1 = -1;
