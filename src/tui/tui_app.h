@@ -9,6 +9,7 @@
 #include "tui/file_monitor.h"
 #include "tui/layout.h"
 #include "tui/panels/controls_panel.h"
+#include "tui/panels/goto_popup.h"
 #include "tui/panels/memory_panel.h"
 #include "tui/panels/output_panel.h"
 #include "tui/panels/registers_panel.h"
@@ -51,6 +52,7 @@ class TuiApp {
   hidra::tui::panels::RegistersPanel registers_panel_;
   hidra::tui::panels::OutputPanel output_panel_;
   hidra::tui::panels::ControlsPanel controls_panel_;
+  hidra::tui::panels::GotoPopup goto_popup_;
   hidra::tui::LayoutConfig layout_config_;
 
   void on_file_changed();

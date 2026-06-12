@@ -20,6 +20,7 @@
 #include "machines/rv32immachine.h"
 #include "tui/layout.h"
 #include "tui/panels/controls_panel.h"
+#include "tui/panels/goto_popup.h"
 #include "tui/panels/memory_panel.h"
 #include "tui/panels/output_panel.h"
 #include "tui/panels/registers_panel.h"
@@ -46,6 +47,7 @@ TuiApp::TuiApp(const std::string& machine_type) : machine_type_(machine_type) {
   memory_panel_.set_machine(machine_.get());
   registers_panel_.set_machine(machine_.get());
   registers_panel_.set_machine_type(machine_type);
+  goto_popup_.set_machine(machine_.get());
 
   controls_panel_.add_action({"uild", 'b', [this]() { do_build(); }});
   controls_panel_.add_action({"tep", 's', [this]() { do_step(); }});
@@ -216,6 +218,48 @@ void TuiApp::run() {
   // ============================================================================
   auto main_component = CatchEvent(renderer, [this, &screen,
                                               &timer_active](Event event) {
+    // Goto popup está ativo - delega eventos para ele
+    if (goto_popup_.is_active()) {
+      // Ignora o evento "dummy" do timer (espaço)
+      if (event == Event::Character(' ')) {
+        return true;
+      }
+
+      // Enter -> navega para o endereço
+      if (event == Event::Character('\n') || event == Event::Character('\r')) {
+        if (auto addr = goto_popup_.get_target_address()) {
+          memory_panel_.set_base_address(*addr);
+          layout_config_.follow_pc = false;
+        }
+        goto_popup_.close();
+        return true;
+      }
+
+      // Escape -> fecha popup
+      if (event == Event::Escape) {
+        goto_popup_.close();
+        return true;
+      }
+
+      // Outros eventos vão para o popup
+      goto_popup_.handle_key(event);
+      return true;
+    }
+
+    // '/' -> abre popup de navegação
+    if (event == Event::Character('/')) {
+      goto_popup_.open();
+      running_ = false;  // Pausa execução
+      if (machine_) machine_->setRunning(false);
+      layout_config_.follow_pc = false;
+      return true;
+    }
+
+    // Ignora o evento "dummy" do timer (espaço)
+    if (event == Event::Character(' ')) {
+      return true;
+    }
+
     // Q ou ESC -> Para tudo e sai
     if (event == Event::Character('q') || event == Event::Escape) {
       timer_active.store(false);  // Para a thread de timer
@@ -397,7 +441,7 @@ Element TuiApp::render() {
   registers_panel_.set_config({.show_hex = layout_config_.show_hex, .machine_type = machine_type_});
   registers_panel_.set_visible_rows(18);
 
-  return vbox(Elements{
+  auto main_content = vbox(Elements{
       render_header(),
       hbox(Elements{
           memory_panel_.render() | flex,
@@ -407,6 +451,16 @@ Element TuiApp::render() {
       output_panel_.render() |
           size(HEIGHT, EQUAL, layout_config_.output_panel_height),
       render_controls_panel(), render_status_bar()});
+
+  // Mostra popup de navegação por cima do layout principal
+  if (goto_popup_.is_active()) {
+    Elements elements;
+    elements.push_back(main_content | dim);
+    elements.push_back(center(clear_under(goto_popup_.render())));
+    return dbox(elements);
+  }
+
+  return main_content;
 }
 
 Element TuiApp::render_header() {
@@ -436,6 +490,7 @@ Element TuiApp::render_controls_panel() {
              text("[R]un/Stop ") | color(Color::Cyan),
              text("[↑/↓]Scroll ") | color(Color::Yellow),
              text("[g/G]Top/Bot ") | color(Color::Yellow),
+             text("[/]Goto ") | color(Color::Cyan),
              text("[H]ex ") | toggle_style(layout_config_.show_hex),
              text("[F]ollowPC ") | toggle_style(layout_config_.follow_pc),
              text("[Q]uit") | color(Color::Red) | bold,
