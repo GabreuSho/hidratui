@@ -143,6 +143,10 @@ protected:
     /// Machine::PC is kept in sync for base class compat.
     int pcValue_;
 
+    /// PC of the currently executing instruction.
+    /// Saved at fetch time, before PC is incremented.
+    int currentPC_;
+
     //////////////////////////////////////////////////
     // Register file
     //////////////////////////////////////////////////

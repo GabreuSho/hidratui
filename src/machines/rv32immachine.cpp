@@ -151,6 +151,7 @@ RV32IMMachine::RV32IMMachine(QObject *parent)
     regFile[2] = SP_INIT;   // sp
     regFile[3] = DATA_BASE;  // gp
     pcValue_ = TEXT_BASE;
+    currentPC_ = TEXT_BASE;
     PC->setValue(TEXT_BASE);
 
     //////////////////////////////////////////////////
@@ -458,6 +459,7 @@ void RV32IMMachine::clear()
     regFile[2] = SP_INIT;   // sp
     regFile[3] = DATA_BASE;  // gp
     pcValue_ = TEXT_BASE;
+    currentPC_ = TEXT_BASE;
     Machine::PC->setValue(TEXT_BASE);
 }
 
@@ -466,6 +468,7 @@ void RV32IMMachine::clearAfterBuild()
     for (int i = 0; i < 32; i++)
         regFile[i] = 0;
     pcValue_ = 0;
+    currentPC_ = 0;
     Machine::PC->setValue(0);
     instructionCount = 0;
     accessCount = 0;
@@ -474,6 +477,7 @@ void RV32IMMachine::clearAfterBuild()
     regFile[2] = SP_INIT;   // sp
     regFile[3] = DATA_BASE;  // gp
     pcValue_ = TEXT_BASE;
+    currentPC_ = TEXT_BASE;
     Machine::PC->setValue(TEXT_BASE);
 }
 
@@ -595,6 +599,7 @@ void RV32IMMachine::step()
 
 void RV32IMMachine::fetchInstruction()
 {
+    currentPC_ = pcValue_;  // Save PC of this instruction before incrementing
     int b0 = getMemoryValue(pcValue_);
     int b1 = getMemoryValue(pcValue_ + 1);
     int b2 = getMemoryValue(pcValue_ + 2);
@@ -685,13 +690,13 @@ void RV32IMMachine::executeInstruction()
 
     // AUIPC
     case 0x17:
-        writeRegister(rd, (pc - 4) + imm);
+        writeRegister(rd, currentPC_ + imm);
         break;
 
     // JAL
     case 0x6F:
         writeRegister(rd, pc);
-        setPCValue((pc - 4) + imm);
+        setPCValue(currentPC_ + imm);
         break;
 
     // JALR
@@ -723,7 +728,7 @@ void RV32IMMachine::executeInstruction()
         }
 
         if (taken)
-            setPCValue((pc - 4) + imm);
+            setPCValue(currentPC_ + imm);
         break;
     }
 
@@ -967,29 +972,65 @@ void RV32IMMachine::assemble(QString sourceCode)
         return val;
     };
 
-    // Check if value fits in 12-bit signed immediate
-    auto fitsIn12 = [](int val) -> bool {
-        return (val >= -2048 && val <= 2047);
-    };
+ // Check if value fits in 12-bit signed immediate
+ auto fitsIn12 = [](int val) -> bool {
+     return (val >= -2048 && val <= 2047);
+ };
 
-    // Compute pseudo-instruction size for pass 1
-    auto pseudoSize = [&](const QString &mnemonic, const QString &arguments) -> int {
-        if (mnemonic == "li") {
-            QStringList parts = arguments.split(commaSep);
-            QString immStr = parts.size() > 1 ? parts.last().trimmed() : arguments.trimmed();
-            bool ok;
-            int val;
-            if (immStr.startsWith("0x", Qt::CaseInsensitive))
-                val = static_cast<int>(immStr.mid(2).toUInt(&ok, 16));
-            else
-                val = immStr.toInt(&ok, 10);
-            if (ok && fitsIn12(val)) return 4;
-            return 8;
-        }
-        if (mnemonic == "la" || mnemonic == "call" || mnemonic == "tail")
-            return 8;
-        return 4;
-    };
+ // Check if an argument string looks like a label (not offset(base), not register, not numeric)
+ auto isLabelArg = [](const QString &s) -> bool {
+     QString t = s.trimmed();
+     if (t.isEmpty()) return false;
+     if (t.contains('(')) return false;
+     if (t.startsWith("0x", Qt::CaseInsensitive) || t.startsWith("-"))
+         return false;
+     bool isNum;
+     t.toInt(&isNum, 10);
+     if (isNum) return false;
+     static QRegExp labelPattern("[a-zA-Z_][a-zA-Z0-9_]*");
+     return labelPattern.exactMatch(t);
+ };
+
+ // Compute pseudo-instruction size for pass 1
+ auto pseudoSize = [&](const QString &mnemonic, const QString &arguments) -> int {
+     if (mnemonic == "li") {
+         // Normalize: replace commas with spaces, split on whitespace
+         QString normalized = arguments;
+         normalized.replace(',', ' ');
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+         QStringList parts = normalized.split(whitespace, Qt::SkipEmptyParts);
+#else
+         QStringList parts = normalized.split(whitespace, QString::SkipEmptyParts);
+#endif
+         QString immStr = parts.size() >= 2 ? parts.last().trimmed() : arguments.trimmed();
+         bool ok;
+         int val;
+         if (immStr.startsWith("0x", Qt::CaseInsensitive))
+             val = static_cast<int>(immStr.mid(2).toUInt(&ok, 16));
+         else
+             val = immStr.toInt(&ok, 10);
+         if (ok && fitsIn12(val))
+             return 4;
+         return 8;
+     }
+     if (mnemonic == "la" || mnemonic == "call" || mnemonic == "tail")
+         return 8;
+     // Load/Store with a label argument may need auipc + lw/sw = 8 bytes
+     if (mnemonic == "lb" || mnemonic == "lh" || mnemonic == "lw"
+         || mnemonic == "lbu" || mnemonic == "lhu"
+         || mnemonic == "sb" || mnemonic == "sh" || mnemonic == "sw") {
+         QString normalized = arguments;
+         normalized.replace(',', ' ');
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+         QStringList largs = normalized.split(whitespace, Qt::SkipEmptyParts);
+#else
+         QStringList largs = normalized.split(whitespace, QString::SkipEmptyParts);
+#endif
+         if (largs.size() >= 2 && isLabelArg(largs[1]))
+             return 8;
+     }
+     return 4;
+ };
 
     //////////////////////////////////////////////////
     // FIRST PASS: Scan for labels, calculate addresses
@@ -1429,14 +1470,14 @@ void RV32IMMachine::assemble(QString sourceCode)
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 bool ok; int imm = parseImm(args[1], ok); if (!ok) throw Machine::invalidValue;
-                writeWordToAssembler(currentAddr, encodeU(imm, rd, 0x37));
+                writeWordToAssembler(currentAddr, encodeU(imm << 12, rd, 0x37));
                 advanceSectionAddr(4); continue;
             }
             if (mnemonic == "auipc") {
                 if (args.size() != 2) throw Machine::wrongNumberOfArguments;
                 int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
                 bool ok; int imm = parseImm(args[1], ok); if (!ok) throw Machine::invalidValue;
-                writeWordToAssembler(currentAddr, encodeU(imm, rd, 0x17));
+                writeWordToAssembler(currentAddr, encodeU(imm << 12, rd, 0x17));
                 advanceSectionAddr(4); continue;
             }
 
@@ -1461,68 +1502,147 @@ void RV32IMMachine::assemble(QString sourceCode)
                 advanceSectionAddr(4); continue;
             }
 
-            // I-type: Load
-            if (mnemonic == "lb" || mnemonic == "lh" || mnemonic == "lw" ||
-                mnemonic == "lbu" || mnemonic == "lhu") {
-        if (args.size() < 2 || args.size() > 3) throw Machine::wrongNumberOfArguments;
-        // RARS syntax: lw rd, label, base -> lw rd, label(base)
-        if (args.size() == 3) {
-            args[1] = args[1] + "(" + args[2] + ")";
-            args.removeAt(2);
-        }
-                int rd = parseReg(args[0]); if (rd < 0) throw Machine::invalidArgument;
-                static QRegExp offsetReg("(-?\\w+)\\(([^)]+)\\)");
-                int imm = 0; int rs1 = -1;
-                if (offsetReg.exactMatch(args[1])) {
-                    bool ok; imm = parseImm(offsetReg.cap(1), ok); if (!ok) imm = 0;
-                    rs1 = parseReg(offsetReg.cap(2));
-                } else {
-                    rs1 = parseReg(args[1]);
-                    if (rs1 < 0) {
-                        bool ok; imm = parseImm(args[1], ok); if (!ok) throw Machine::invalidArgument;
-                        rs1 = 0;
-                    }
-                }
-                if (rs1 < 0) throw Machine::invalidArgument;
-                uint32_t funct3 = 0;
-                if (mnemonic == "lb")  funct3 = 0;
-                else if (mnemonic == "lh")  funct3 = 1;
-                else if (mnemonic == "lw")  funct3 = 2;
-                else if (mnemonic == "lbu") funct3 = 4;
-                else if (mnemonic == "lhu") funct3 = 5;
-                writeWordToAssembler(currentAddr, encodeI(imm, rs1, funct3, rd, 0x03));
-                advanceSectionAddr(4); continue;
-            }
+ // I-type: Load
+ if (mnemonic == "lb" || mnemonic == "lh" || mnemonic == "lw"
+     || mnemonic == "lbu" || mnemonic == "lhu") {
+     if (args.size() < 2 || args.size() > 3)
+         throw Machine::wrongNumberOfArguments;
 
-            // S-type: Store
-            if (mnemonic == "sb" || mnemonic == "sh" || mnemonic == "sw") {
-        if (args.size() < 2 || args.size() > 3) throw Machine::wrongNumberOfArguments;
-        // RARS syntax: sw src, label, base -> sw src, label(base)
-        if (args.size() == 3) {
-            args[1] = args[1] + "(" + args[2] + ")";
-            args.removeAt(2);
-        }
-                int rs2 = parseReg(args[0]); if (rs2 < 0) throw Machine::invalidArgument;
-                static QRegExp offsetRegS("(-?\\w+)\\(([^)]+)\\)");
-                int imm = 0; int rs1 = -1;
-                if (offsetRegS.exactMatch(args[1])) {
-                    bool ok; imm = parseImm(offsetRegS.cap(1), ok); if (!ok) imm = 0;
-                    rs1 = parseReg(offsetRegS.cap(2));
-                } else {
-                    rs1 = parseReg(args[1]);
-                    if (rs1 < 0) {
-                        bool ok; imm = parseImm(args[1], ok); if (!ok) throw Machine::invalidArgument;
-                        rs1 = 0;
-                    }
-                }
-                if (rs1 < 0) throw Machine::invalidArgument;
-                uint32_t funct3 = 0;
-                if (mnemonic == "sb") funct3 = 0;
-                else if (mnemonic == "sh") funct3 = 1;
-                else if (mnemonic == "sw") funct3 = 2;
-                writeWordToAssembler(currentAddr, encodeS(imm, rs2, rs1, funct3, 0x23));
-                advanceSectionAddr(4); continue;
-            }
+     uint32_t funct3 = 0;
+     if (mnemonic == "lb") funct3 = 0;
+     else if (mnemonic == "lh") funct3 = 1;
+     else if (mnemonic == "lw") funct3 = 2;
+     else if (mnemonic == "lbu") funct3 = 4;
+     else if (mnemonic == "lhu") funct3 = 5;
+
+     int rd = parseReg(args[0]);
+     if (rd < 0) throw Machine::invalidArgument;
+
+     // Check if second arg is a bare label (not offset(base))
+     if (args.size() >= 2 && isLabelArg(args[1])) {
+         // Load with label: lw rd, label [, aux]
+         // aux register defaults to rd (safe: load overwrites rd anyway)
+         int aux = rd;
+         if (args.size() == 3) {
+             aux = parseReg(args[2]);
+             if (aux < 0) throw Machine::invalidArgument;
+         }
+         bool ok;
+         int target = parseImm(args[1], ok);
+         if (!ok) throw Machine::invalidArgument;
+         int offset = target - currentAddr;
+         if (fitsIn12(offset)) {
+             // Optimized: 1 instruction + 1 NOP (8 bytes reserved)
+             writeWordToAssembler(currentAddr, encodeI(offset, 0, funct3, rd, 0x03));
+             writeWordToAssembler(currentAddr + 4, encodeI(0, 0, 0, 0, 0x13));
+         } else {
+             // auipc aux, upper; lw rd, lower(aux)
+             int upper = (offset + 0x800) >> 12;
+             int lower = offset - (upper << 12);
+             writeWordToAssembler(currentAddr, encodeU(upper << 12, aux, 0x17));
+             writeWordToAssembler(currentAddr + 4, encodeI(lower, aux, funct3, rd, 0x03));
+         }
+         advanceSectionAddr(8);
+         continue;
+     }
+
+     // RARS syntax: lw rd, label, base -> lw rd, label(base)
+     if (args.size() == 3) {
+         args[1] = args[1] + "(" + args[2] + ")";
+         args.removeAt(2);
+     }
+
+     static QRegExp offsetReg("(-?\\w+)\\(([^)]+)\\)");
+     int imm = 0;
+     int rs1 = -1;
+     if (offsetReg.exactMatch(args[1])) {
+         bool ok;
+         imm = parseImm(offsetReg.cap(1), ok);
+         if (!ok) imm = 0;
+         rs1 = parseReg(offsetReg.cap(2));
+     } else {
+         rs1 = parseReg(args[1]);
+         if (rs1 < 0) {
+             bool ok;
+             imm = parseImm(args[1], ok);
+             if (!ok) throw Machine::invalidArgument;
+             rs1 = 0;
+         }
+     }
+     if (rs1 < 0) throw Machine::invalidArgument;
+     writeWordToAssembler(currentAddr, encodeI(imm, rs1, funct3, rd, 0x03));
+     advanceSectionAddr(4);
+     continue;
+ }
+
+ // S-type: Store
+ if (mnemonic == "sb" || mnemonic == "sh" || mnemonic == "sw") {
+     if (args.size() < 2 || args.size() > 3)
+         throw Machine::wrongNumberOfArguments;
+
+     uint32_t funct3 = 0;
+     if (mnemonic == "sb") funct3 = 0;
+     else if (mnemonic == "sh") funct3 = 1;
+     else if (mnemonic == "sw") funct3 = 2;
+
+     int rs2 = parseReg(args[0]);
+     if (rs2 < 0) throw Machine::invalidArgument;
+
+     // Check if second arg is a bare label (not offset(base))
+     if (args.size() >= 2 && isLabelArg(args[1])) {
+         // Store with label: sw rs2, label [, aux]
+         if (args.size() < 3)
+             throw Machine::wrongNumberOfArguments; // need aux register for auipc
+         int aux = parseReg(args[2]);
+         if (aux < 0) throw Machine::invalidArgument;
+         bool ok;
+         int target = parseImm(args[1], ok);
+         if (!ok) throw Machine::invalidArgument;
+         int offset = target - currentAddr;
+         if (fitsIn12(offset)) {
+             // Optimized: 1 instruction + 1 NOP (8 bytes reserved)
+             writeWordToAssembler(currentAddr, encodeS(offset, rs2, 0, funct3, 0x23));
+             writeWordToAssembler(currentAddr + 4, encodeI(0, 0, 0, 0, 0x13));
+         } else {
+             // auipc aux, upper; sw rs2, lower(aux)
+             int upper = (offset + 0x800) >> 12;
+             int lower = offset - (upper << 12);
+             writeWordToAssembler(currentAddr, encodeU(upper << 12, aux, 0x17));
+             writeWordToAssembler(currentAddr + 4, encodeS(lower, rs2, aux, funct3, 0x23));
+         }
+         advanceSectionAddr(8);
+         continue;
+     }
+
+     // RARS syntax: sw src, label, base -> sw src, label(base)
+     if (args.size() == 3) {
+         args[1] = args[1] + "(" + args[2] + ")";
+         args.removeAt(2);
+     }
+
+     static QRegExp offsetRegS("(-?\\w+)\\(([^)]+)\\)");
+     int imm = 0;
+     int rs1 = -1;
+     if (offsetRegS.exactMatch(args[1])) {
+         bool ok;
+         imm = parseImm(offsetRegS.cap(1), ok);
+         if (!ok) imm = 0;
+         rs1 = parseReg(offsetRegS.cap(2));
+     } else {
+         rs1 = parseReg(args[1]);
+         if (rs1 < 0) {
+             bool ok;
+             imm = parseImm(args[1], ok);
+             if (!ok) throw Machine::invalidArgument;
+             rs1 = 0;
+         }
+     }
+     if (rs1 < 0) throw Machine::invalidArgument;
+     writeWordToAssembler(currentAddr, encodeS(imm, rs2, rs1, funct3, 0x23));
+     advanceSectionAddr(4);
+     continue;
+ }
+
 
             // I-type: OP-IMM
             if (mnemonic == "addi" || mnemonic == "slti" || mnemonic == "sltiu" ||

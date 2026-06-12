@@ -615,6 +615,327 @@ static bool test_sw_lw_3args() {
     return true;
 }
 
+//////////////////////////////////////////////////
+// Test 22: teste_case2.s — full execution with .data label
+//////////////////////////////////////////////////
+static bool test_case2_execution() {
+    std::cout << "\n=== Test 22: teste_case2.s full execution ===" << std::endl;
+    RV32IMMachine m;
+    QString code = R"(
+.text
+li x4 0
+li x6 1
+lw x5 end_data
+j entry
+loop: beqz x5 fim
+add x6 x6 x6
+entry: and x7 x5 x6
+beqz x7 loop
+j ehum
+ehum: xor x5 x5 x6
+addi x4 x4 1
+j loop
+fim: sw x4 end_res x8
+ebreak
+.data
+end_data: .word 0x0000ffff
+end_res: .word 0
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build unsuccessful" << std::endl;
+        return false;
+    }
+    runSteps(m, 200);
+    int x4 = m.getRegisterValueByName("x4");
+    int x5 = m.getRegisterValueByName("x5");
+    int end_res = m.memoryReadWord(RV32IMMachine::DATA_BASE + 4);
+    if (x4 != 16) {
+        std::cout << " FAIL: x4=" << x4 << " expected 16" << std::endl;
+        return false;
+    }
+    if (x5 != 0) {
+        std::cout << " FAIL: x5=0x" << std::hex << x5 << " expected 0" << std::dec << std::endl;
+        return false;
+    }
+    if (end_res != 16) {
+        std::cout << " FAIL: end_res=" << end_res << " expected 16" << std::endl;
+        return false;
+    }
+    if (m.isRunning()) {
+        std::cout << " FAIL: still running" << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 23: lw/sw with label — auipc expansion
+//////////////////////////////////////////////////
+static bool test_lw_sw_label_auipc() {
+    std::cout << "\n=== Test 23: lw/sw with label (auipc expansion) ===" << std::endl;
+    RV32IMMachine m;
+    m.assemble(".text\nlw t0, mydata\necall\n.data\nmydata: .word 42\n");
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build unsuccessful" << std::endl;
+        return false;
+    }
+    // lw t0, mydata should expand to auipc+lw (8 bytes)
+    // First instruction at TEXT_BASE should be AUIPC (opcode 0x17)
+    uint32_t first = (uint32_t)m.memoryReadWord(RV32IMMachine::TEXT_BASE);
+    int opcode = first & 0x7F;
+    if (opcode != 0x17) {
+        std::cout << " FAIL: first instr opcode=0x" << std::hex << opcode << " expected 0x17 (AUIPC)" << std::dec << std::endl;
+        return false;
+    }
+    // Second instruction should be LW (opcode 0x03)
+    uint32_t second = (uint32_t)m.memoryReadWord(RV32IMMachine::TEXT_BASE + 4);
+    opcode = second & 0x7F;
+    if (opcode != 0x03) {
+        std::cout << " FAIL: second instr opcode=0x" << std::hex << opcode << " expected 0x03 (LW)" << std::dec << std::endl;
+        return false;
+    }
+    // Run and verify t0=42
+    runSteps(m, 10);
+    if (m.getRegisterValueByName("t0") != 42) {
+        std::cout << " FAIL: t0=" << m.getRegisterValueByName("t0") << " expected 42" << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 24: sw with label — store result in .data
+//////////////////////////////////////////////////
+static bool test_sw_label_store() {
+    std::cout << "\n=== Test 24: sw with label (store to .data) ===" << std::endl;
+    RV32IMMachine m;
+    m.assemble(".text\nli t0, 777\nsw t0 result t1\nebreak\n.data\nresult: .word 0\n");
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build unsuccessful" << std::endl;
+        return false;
+    }
+    runSteps(m, 20);
+    int val = m.memoryReadWord(RV32IMMachine::DATA_BASE);
+    if (val != 777) {
+        std::cout << " FAIL: result=" << val << " expected 777" << std::endl;
+        return false;
+    }
+    if (m.isRunning()) {
+        std::cout << " FAIL: still running" << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 25: All branch types (step-by-step)
+//////////////////////////////////////////////////
+static bool test_all_branches() {
+    std::cout << "\n=== Test 25: All branch types ===" << std::endl;
+    RV32IMMachine m;
+    QString code = R"(
+        li t0, 5
+        li t1, 5
+        li t2, 10
+        li t3, 3
+        beq t0, t1, b1
+        li t4, 99
+        b1: bne t0, t3, b2
+        li t4, 99
+        b2: blt t3, t0, b3
+        li t4, 99
+        b3: bge t2, t0, b4
+        li t4, 99
+        b4: bltu t3, t2, b5
+        li t4, 99
+        b5: bgeu t2, t3, b6
+        li t4, 99
+        b6: ecall
+    )";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build" << std::endl;
+        return false;
+    }
+    runSteps(m, 40);
+    // t4 should never be set to 99 (all branches should be taken)
+    int t4 = m.getRegisterValueByName("t4");
+    if (t4 == 99) {
+        std::cout << " FAIL: a branch was not taken, t4=" << t4 << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 26: LUI and AUIPC (step-by-step)
+//////////////////////////////////////////////////
+static bool test_lui_auipc() {
+    std::cout << "\n=== Test 26: LUI and AUIPC ===" << std::endl;
+    RV32IMMachine m;
+    m.assemble("lui t0, 0x12345\nauipc t1, 0x1000\necall\n");
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build" << std::endl;
+        return false;
+    }
+    // Debug: check instruction encoding
+    uint32_t instr0 = m.memoryReadWord(RV32IMMachine::TEXT_BASE);
+    uint32_t instr1 = m.memoryReadWord(RV32IMMachine::TEXT_BASE + 4);
+    std::cout << "  DEBUG: instr@0x" << std::hex << RV32IMMachine::TEXT_BASE
+              << " = 0x" << instr0 << " opcode=" << (instr0 & 0x7F) << std::dec << std::endl;
+    std::cout << "  DEBUG: instr@0x" << std::hex << (RV32IMMachine::TEXT_BASE + 4)
+              << " = 0x" << instr1 << " opcode=" << (instr1 & 0x7F) << std::dec << std::endl;
+    runSteps(m, 10);
+    int t0 = m.getRegisterValueByName("t0");
+    if (t0 != 0x12345000) {
+        std::cout << " FAIL: lui t0=0x" << std::hex << t0 << " expected 0x12345000" << std::dec << std::endl;
+        return false;
+    }
+    int t1 = m.getRegisterValueByName("t1");
+    // auipc t1, 0x1000: PC + (0x1000 << 12) = address_of_auipc + 0x1000000
+    // AUIPC is at TEXT_BASE + 4 (after LUI)
+    int expected_t1 = RV32IMMachine::TEXT_BASE + 4 + 0x1000000;
+    std::cout << "  DEBUG: t1=0x" << std::hex << t1 << " expected=0x" << expected_t1 << std::dec << std::endl;
+    if (t1 != expected_t1) {
+        std::cout << " FAIL: auipc t1=0x" << std::hex << t1 << " expected 0x" << expected_t1 << std::dec << std::endl;
+        return false;
+    }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 27: M extension (mulh, mulhsu, mulhu, divu, remu)
+//////////////////////////////////////////////////
+static bool test_m_extension_full() {
+    std::cout << "\n=== Test 27: M extension full ===" << std::endl;
+    RV32IMMachine m;
+    QString code = R"(
+        li t0, 7
+        li t1, 3
+        mul t2, t0, t1
+        div t3, t0, t1
+        rem t4, t0, t1
+        divu t5, t0, t1
+        remu t6, t0, t1
+        ecall
+    )";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build" << std::endl;
+        return false;
+    }
+    runSteps(m, 30);
+    if (m.getRegisterValueByName("t2") != 21) { std::cout << " FAIL: mul" << std::endl; return false; }
+    if (m.getRegisterValueByName("t3") != 2) { std::cout << " FAIL: div" << std::endl; return false; }
+    if (m.getRegisterValueByName("t4") != 1) { std::cout << " FAIL: rem" << std::endl; return false; }
+    if (m.getRegisterValueByName("t5") != 2) { std::cout << " FAIL: divu" << std::endl; return false; }
+    if (m.getRegisterValueByName("t6") != 1) { std::cout << " FAIL: remu" << std::endl; return false; }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 28: Logical and shift instructions (step-by-step)
+//////////////////////////////////////////////////
+static bool test_logical_shift() {
+    std::cout << "\n=== Test 28: Logical and shift ===" << std::endl;
+    RV32IMMachine m;
+    QString code = R"(
+        li t0, 0xFF
+        li t1, 0x0F
+        and t2, t0, t1
+        or t3, t0, t1
+        xor t4, t0, t1
+        sll t5, t1, t1
+        srl t6, t0, t1
+        ecall
+    )";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build" << std::endl;
+        return false;
+    }
+    runSteps(m, 30);
+    if (m.getRegisterValueByName("t2") != 0x0F) { std::cout << " FAIL: and=" << m.getRegisterValueByName("t2") << std::endl; return false; }
+    if (m.getRegisterValueByName("t3") != 0xFF) { std::cout << " FAIL: or=" << m.getRegisterValueByName("t3") << std::endl; return false; }
+    if (m.getRegisterValueByName("t4") != 0xF0) { std::cout << " FAIL: xor=" << m.getRegisterValueByName("t4") << std::endl; return false; }
+    if (m.getRegisterValueByName("t5") != (0x0F << 0x0F)) { std::cout << " FAIL: sll" << std::endl; return false; }
+    if ((uint32_t)m.getRegisterValueByName("t6") != (0xFFu >> 0x0F)) { std::cout << " FAIL: srl" << std::endl; return false; }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 29: SLT/SLTU/SLTI/SLTIU
+//////////////////////////////////////////////////
+static bool test_set_instructions() {
+    std::cout << "\n=== Test 29: SLT/SLTU/SLTI/SLTIU ===" << std::endl;
+    RV32IMMachine m;
+    QString code = R"(
+        li t0, -1
+        li t1, 1
+        slt t2, t0, t1
+        sltu t3, t0, t1
+        slti t4, t0, 0
+        sltiu t5, t0, 1
+        ecall
+    )";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build" << std::endl;
+        return false;
+    }
+    runSteps(m, 30);
+    // -1 < 1 (signed) → t2=1
+    if (m.getRegisterValueByName("t2") != 1) { std::cout << " FAIL: slt=" << m.getRegisterValueByName("t2") << std::endl; return false; }
+    // 0xFFFFFFFF > 1 (unsigned) → t3=0
+    if (m.getRegisterValueByName("t3") != 0) { std::cout << " FAIL: sltu=" << m.getRegisterValueByName("t3") << std::endl; return false; }
+    // -1 < 0 (signed) → t4=1
+    if (m.getRegisterValueByName("t4") != 1) { std::cout << " FAIL: slti=" << m.getRegisterValueByName("t4") << std::endl; return false; }
+    // -1 as unsigned < 1 as unsigned? 0xFFFFFFFF < 1 → false → t5=0
+    if (m.getRegisterValueByName("t5") != 0) { std::cout << " FAIL: sltiu=" << m.getRegisterValueByName("t5") << std::endl; return false; }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 30: Load/store byte and half
+//////////////////////////////////////////////////
+static bool test_load_store_byte_half() {
+    std::cout << "\n=== Test 30: Load/store byte and half ===" << std::endl;
+    RV32IMMachine m;
+    QString code = R"(
+        li t0, 0x41
+        li t1, 0x1234
+        addi sp, x0, 256
+        sb t0, 0(sp)
+        sh t1, 2(sp)
+        lb t2, 0(sp)
+        lh t3, 2(sp)
+        lbu t4, 0(sp)
+        lhu t5, 2(sp)
+        ecall
+    )";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) {
+        std::cout << " FAIL: build" << std::endl;
+        return false;
+    }
+    runSteps(m, 30);
+    if (m.getRegisterValueByName("t2") != 0x41) { std::cout << " FAIL: lb=" << m.getRegisterValueByName("t2") << std::endl; return false; }
+    if (m.getRegisterValueByName("t3") != 0x1234) { std::cout << " FAIL: lh=" << m.getRegisterValueByName("t3") << std::endl; return false; }
+    if (m.getRegisterValueByName("t4") != 0x41) { std::cout << " FAIL: lbu=" << m.getRegisterValueByName("t4") << std::endl; return false; }
+    if (m.getRegisterValueByName("t5") != 0x1234) { std::cout << " FAIL: lhu=" << m.getRegisterValueByName("t5") << std::endl; return false; }
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     std::cout << "\n=== RV32IM Test Suite ===\n" << std::endl;
@@ -643,6 +964,15 @@ int main(int argc, char *argv[]) {
     run(test_space_separated_args);
     run(test_data_labels);
     run(test_sw_lw_3args);
+    run(test_case2_execution);
+    run(test_lw_sw_label_auipc);
+    run(test_sw_label_store);
+    run(test_all_branches);
+    run(test_lui_auipc);
+    run(test_m_extension_full);
+    run(test_logical_shift);
+    run(test_set_instructions);
+    run(test_load_store_byte_half);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;
