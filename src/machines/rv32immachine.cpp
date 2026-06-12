@@ -1929,6 +1929,14 @@ QString RV32IMMachine::getAddressCorrespondingLabel(int address) {
     return addressCorrespondingLabel.value(address, "");
 }
 
+int RV32IMMachine::getLabelAddress(const QString& label) const {
+    return assemblerLabels_.value(label.toLower(), -1);
+}
+
+QStringList RV32IMMachine::getAllLabels() const {
+    return assemblerLabels_.keys();
+}
+
 int RV32IMMachine::getAddressCorrespondingSourceLine(int address) {
     return addressCorrespondingSourceLine.value(address, -1);
 }

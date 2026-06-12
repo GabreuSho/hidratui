@@ -174,6 +174,8 @@ public:
     virtual int getSourceLineCorrespondingAddress(int line);
     virtual int getAddressCorrespondingSourceLine(int address);
     virtual QString getAddressCorrespondingLabel(int address);
+    virtual int getLabelAddress(const QString& label) const;
+    virtual QStringList getAllLabels() const;
     QVector<Instruction *> getInstructions() const;
     Instruction* getInstructionFromValue(int value);
     Instruction* getInstructionFromMnemonic(QString mnemonic);

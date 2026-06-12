@@ -1589,6 +1589,17 @@ QString Machine::getAddressCorrespondingLabel(int address)
     return (buildSuccessful) ? addressCorrespondingLabel.value(address) : "";
 }
 
+int Machine::getLabelAddress(const QString& label) const
+{
+    if (!buildSuccessful) return -1;
+    return labelPCMap.value(label.toLower(), -1);
+}
+
+QStringList Machine::getAllLabels() const
+{
+    return labelPCMap.keys();
+}
+
 QVector<Instruction *> Machine::getInstructions() const
 {
     return instructions;

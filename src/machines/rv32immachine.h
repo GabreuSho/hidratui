@@ -121,6 +121,8 @@ public:
     // Override label/source-line mapping
     //////////////////////////////////////////////////
     QString getAddressCorrespondingLabel(int address) override;
+    int getLabelAddress(const QString& label) const override;
+    QStringList getAllLabels() const override;
     int getAddressCorrespondingSourceLine(int address) override;
     int getSourceLineCorrespondingAddress(int line) override;
     int getPCCorrespondingSourceLine() override;
