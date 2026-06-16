@@ -967,6 +967,84 @@ ecall
     return true;
 }
 
+//////////////////////////////////////////////////
+// Test 32: .space directive
+//////////////////////////////////////////////////
+static bool test_space_directive() {
+    std::cout << "\n=== Test 32: .space directive ===" << std::endl;
+    RV32IMMachine m;
+
+    // .space reserves N bytes initialized to zero.
+    // We verify that subsequent labels land at correct addresses.
+    QString code = R"(
+.text
+li t0, 1
+ecall
+.data
+buffer: .space 16
+value: .word 0xdeadbeef
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    // buffer should be at DATA_BASE (0x10040000)
+    // value should be at DATA_BASE + 16 (0x10040010)
+    int bufferAddr = m.getLabelAddress("buffer");
+    int valueAddr = m.getLabelAddress("value");
+    if (bufferAddr != RV32IMMachine::DATA_BASE) {
+        std::cout << " FAIL: buffer addr=0x" << std::hex << bufferAddr
+                  << " expected 0x" << RV32IMMachine::DATA_BASE << std::dec << std::endl;
+        return false;
+    }
+    if (valueAddr != RV32IMMachine::DATA_BASE + 16) {
+        std::cout << " FAIL: value addr=0x" << std::hex << valueAddr
+                  << " expected 0x" << (RV32IMMachine::DATA_BASE + 16) << std::dec << std::endl;
+        return false;
+    }
+    // Verify .word after .space is correct
+    uint32_t wordVal = static_cast<uint32_t>(m.getMemoryValue(valueAddr)) |
+                       (static_cast<uint32_t>(m.getMemoryValue(valueAddr + 1)) << 8) |
+                       (static_cast<uint32_t>(m.getMemoryValue(valueAddr + 2)) << 16) |
+                       (static_cast<uint32_t>(m.getMemoryValue(valueAddr + 3)) << 24);
+    if (wordVal != 0xdeadbeef) {
+        std::cout << " FAIL: value word=0x" << std::hex << wordVal
+                  << " expected 0xdeadbeef" << std::dec << std::endl;
+        return false;
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 33: All comment styles
+//////////////////////////////////////////////////
+static bool test_comment_styles() {
+    std::cout << "\n=== Test 33: Comment styles ===" << std::endl;
+    RV32IMMachine m;
+
+    // Test all supported comment styles: # // ; %
+    QString code = R"(
+# Comment with hash
+li t0, 42 // Comment with double slash
+ecall; Comment with semicolon
+% Comment with percent
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    // After assembling only "li t0, 42" and "ecall", t0 should be 42
+    m.updateInstructionStrings();
+    runSteps(m);
+    if (m.getRegisterValueByName("t0") != 42) {
+        std::cout << " FAIL: t0=" << m.getRegisterValueByName("t0") << " expected 42\n";
+        return false;
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     std::cout << "\n=== RV32IM Test Suite ===\n" << std::endl;
@@ -1005,6 +1083,8 @@ int main(int argc, char *argv[]) {
     run(test_set_instructions);
     run(test_load_store_byte_half);
     run(test_eqv_equate);
+    run(test_space_directive);
+    run(test_comment_styles);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;

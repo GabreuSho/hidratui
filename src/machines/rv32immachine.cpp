@@ -888,7 +888,7 @@ void RV32IMMachine::assemble(QString sourceCode)
     //////////////////////////////////////////////////
     // Regular expressions
     //////////////////////////////////////////////////
-    static QRegExp matchComments("(;.*$)");
+    static QRegExp matchComments("(#|//|;|%).*$");
     static QRegExp validLabel("[a-zA-Z_][a-zA-Z0-9_]*");
     static QRegExp whitespace("\\s+");
     static QRegExp commaSep("\\s*,\\s*");
@@ -905,6 +905,7 @@ void RV32IMMachine::assemble(QString sourceCode)
     //////////////////////////////////////////////////
     // Clear assembler data
     //////////////////////////////////////////////////
+    sparseMemory_.clear();     // Always start with zeroed memory
     assemblerMemory_.clear();
     assemblerLabels_.clear();
     equates_.clear();
@@ -1092,6 +1093,11 @@ void RV32IMMachine::assemble(QString sourceCode)
                 int alignment = 1 << align;
                 if (currentAddr % alignment != 0)
                     advanceSectionAddr1(alignment - (currentAddr % alignment));
+            } else if (mnemonic == ".space") {
+                bool ok;
+                int bytes = parseImm(arguments, ok);
+                if (!ok || bytes < 0) throw Machine::invalidValue;
+                advanceSectionAddr1(bytes);
     } else if (mnemonic == ".text") {
         section = TEXT_SECTION;
         currentAddr = textCurrentAddr;
@@ -1235,6 +1241,18 @@ void RV32IMMachine::assemble(QString sourceCode)
                 int alignment = 1 << align;
                 if (currentAddr % alignment != 0)
                     currentAddr += alignment - (currentAddr % alignment);
+                if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
+                else dataCurrentAddr = currentAddr;
+                continue;
+            }
+            if (mnemonic == ".space") {
+                bool ok;
+                int bytes = parseImm(arguments, ok);
+                if (!ok || bytes < 0) throw Machine::invalidValue;
+                // .space reserves bytes initialized to zero in the data section.
+                // Just advance the address; assemblerMemory_ only stores non-zero
+                // bytes, so nothing to write for zeros.
+                currentAddr += bytes;
                 if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
                 else dataCurrentAddr = currentAddr;
                 continue;
