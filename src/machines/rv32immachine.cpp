@@ -907,6 +907,7 @@ void RV32IMMachine::assemble(QString sourceCode)
     //////////////////////////////////////////////////
     assemblerMemory_.clear();
     assemblerLabels_.clear();
+    equates_.clear();
     labelPCMap.clear();
 
     //////////////////////////////////////////////////
@@ -962,6 +963,9 @@ void RV32IMMachine::assemble(QString sourceCode)
             return assemblerLabels_[t.toLower()];
         if (labelPCMap.contains(t.toLower()))
             return labelPCMap[t.toLower()];
+        // Check equates (.eqv defined constants)
+        if (equates_.contains(t.toLower()))
+            return equates_[t.toLower()];
         if (t.startsWith("0x", Qt::CaseInsensitive)) {
             uint val = t.toUInt(&ok, 16);
             if (!ok) { ok = false; return 0; }
@@ -1097,6 +1101,33 @@ void RV32IMMachine::assemble(QString sourceCode)
     } else if (mnemonic == ".globl" || mnemonic == ".global" ||
                mnemonic == ".section") {
         // No-op
+    } else if (mnemonic == ".eqv") {
+        // .eqv NAME value — define a constant
+        QString normalized = arguments;
+        normalized.replace(',', ' ');
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+        QStringList parts = normalized.split(whitespace, Qt::SkipEmptyParts);
+#else
+        QStringList parts = normalized.split(whitespace, QString::SkipEmptyParts);
+#endif
+        if (parts.size() < 2)
+            throw Machine::wrongNumberOfArguments;
+        QString name = parts[0].trimmed();
+        QString valueStr = parts[1].trimmed();
+        if (!validLabel.exactMatch(name))
+            throw Machine::invalidLabel;
+        bool ok;
+        int value;
+        if (valueStr.startsWith("0x", Qt::CaseInsensitive))
+            value = valueStr.mid(2).toInt(&ok, 16);
+        else
+            value = valueStr.toInt(&ok, 10);
+        if (!ok)
+            throw Machine::invalidValue;
+        equates_.insert(name.toLower(), value);
+    } else if (mnemonic.startsWith(".")) {
+        // Unknown directive starting with dot
+        throw Machine::invalidInstruction;
     } else {
                 advanceSectionAddr1(pseudoSize(mnemonic, arguments));
                     }
@@ -1220,6 +1251,14 @@ void RV32IMMachine::assemble(QString sourceCode)
             }
             if (mnemonic == ".globl" || mnemonic == ".global" || mnemonic == ".section")
                 continue;
+            if (mnemonic == ".eqv") {
+                // .eqv is processed in pass 1; just skip here
+                continue;
+            }
+            if (mnemonic.startsWith(".")) {
+                // Unknown directive — should have been caught in pass 1
+                throw Machine::invalidInstruction;
+            }
 
             //////////////////////////////////////////////////
             // Pseudo-instructions

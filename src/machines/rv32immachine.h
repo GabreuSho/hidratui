@@ -190,6 +190,7 @@ protected:
     //////////////////////////////////////////////////
     QHash<int, uint8_t> assemblerMemory_;
     QHash<QString, int> assemblerLabels_;
+    QMap<QString, int> equates_;  // .eqv NAME value mappings
 
     //////////////////////////////////////////////////
     // Assembler status
