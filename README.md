@@ -73,26 +73,34 @@ Permite ir diretamente para:
 
 Compatível com sintaxe RARS/MARS:
 ```asm
-# Comentários estilo RARS
+# Exemplo: soma de dois números
+.eqv VALOR_A 5
+.eqv VALOR_B 3
+
 .text
-.globl _start
 _start:
-    addi x10, x0, 5    # Registradores por nome (x10 = t0)
-    addi x11, x0, 3
-    add x12, x10, x11  # x12 = x10 + x11
-    sw x12, 0(x0)      #.store word
-    lw x13, 0(x0)       # load word
-    ebreak             # fim
+    li t0, VALOR_A    # Carrega constante (t0 = 5)
+    li t1, VALOR_B    # Carrega constante (t1 = 3)
+    add t2, t0, t1     # Soma (t2 = 8)
+    ebreak             # Encerra execução
 
 .data
-msg: .asciz "Olá\n"
+msg: .asciz "Resultado: "
 ```
 
 ### Suporte
-- Instruções I (integer) + M (multiplication)
+- Instruções I (integer) + M (multiplication/division)
 - Labels em `.text` e `.data`
-- Diretivas: `.text`, `.data`, `.word`, `.byte`, `.asciz`, `.space`
+- Diretivas: `.text`, `.data`, `.word`, `.byte`, `.half`, `.asciz`, `.space`, `.align`, `.eqv`
 - Separadores: vírgulas e espaços (`add t0 t1 t2` ou `add t0, t1, t2`)
+- Pseudo-instruções: `li`, `la`, `mv`, `nop`, `call`, `ret`, etc.
+
+### .eqv (Equates)
+Define constantes para reutilização:
+```asm
+.eqv BUFFER_SIZE 256
+.eqv UART_BASE 0x40001000
+```
 
 ## Estrutura do Projeto
 
@@ -110,6 +118,9 @@ src/
 ```bash
 cd build
 ctest --output-on-failure
+
+# Ou diretamente:
+./src/tests/rv32imtest/test_rv32im
 ```
 
 ## Créditos
