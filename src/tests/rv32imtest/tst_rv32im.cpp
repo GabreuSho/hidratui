@@ -523,10 +523,10 @@ static bool test_clear_after_build_preserves_init() {
 static bool test_failed_assemble_preserves_init() {
     std::cout << "\n=== Test 18: Failed assemble preserves SP/GP/PC ===" << std::endl;
     RV32IMMachine m;
-    // .eqv is not supported — assemble will fail
-    m.assemble(".eqv len 0x10010000\n.text\nli t0, 42\necall\n");
+    // .xyz is not a supported directive — assemble will fail
+    m.assemble(".xyz invalid\n.text\nli t0, 42\necall\n");
     if (m.getBuildSuccessful()) {
-        std::cout << " FAIL: build should have failed for .eqv" << std::endl;
+        std::cout << " FAIL: build should have failed for .xyz" << std::endl;
         return false;
     }
     // Even after failed assemble, PC/SP/GP must be RARS defaults
@@ -936,6 +936,37 @@ static bool test_load_store_byte_half() {
     return true;
 }
 
+//////////////////////////////////////////////////
+// Test 31: .eqv (equate) directive
+//////////////////////////////////////////////////
+static bool test_eqv_equate() {
+    std::cout << "\n=== Test 31: .eqv (equate) ===" << std::endl;
+    RV32IMMachine m;
+
+    QString code = R"(
+.eqv CONST 42
+.eqv HEXVAL 0x100
+.text
+li t0, CONST
+li t1, HEXVAL
+li t2, 10
+add t3, t0, t1
+add t3, t3, t2
+ecall
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    runSteps(m);
+    // t0=42, t1=256, t2=10, t3=42+256+10=308
+    if (m.getRegisterValueByName("t0") != 42) { std::cout << " FAIL: t0=" << m.getRegisterValueByName("t0") << " expected 42\n"; return false; }
+    if (m.getRegisterValueByName("t1") != 256) { std::cout << " FAIL: t1=" << m.getRegisterValueByName("t1") << " expected 256\n"; return false; }
+    if (m.getRegisterValueByName("t3") != 308) { std::cout << " FAIL: t3=" << m.getRegisterValueByName("t3") << " expected 308\n"; return false; }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     std::cout << "\n=== RV32IM Test Suite ===\n" << std::endl;
@@ -973,6 +1004,7 @@ int main(int argc, char *argv[]) {
     run(test_logical_shift);
     run(test_set_instructions);
     run(test_load_store_byte_half);
+    run(test_eqv_equate);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;
