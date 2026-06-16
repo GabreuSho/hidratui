@@ -95,10 +95,19 @@ void TuiApp::do_build() {
 
   try {
     machine_->assemble(QString::fromStdString(buffer.str()));
-    machine_->updateInstructionStrings();
     file_modified_ = false;
     output_panel_.clear();
-    output_panel_.add_message("✓ Montagem OK", false);
+    if (machine_->getBuildSuccessful()) {
+      machine_->updateInstructionStrings();
+      output_panel_.add_message("✓ Montagem OK", false);
+    } else {
+      int errLine = machine_->getFirstErrorLine();
+      if (errLine >= 0) {
+        output_panel_.add_message("✗ Erro na linha " + std::to_string(errLine + 1), true);
+      } else {
+        output_panel_.add_message("✗ Erro na montagem", true);
+      }
+    }
   } catch (const QString& e) {
     output_panel_.clear();
     output_panel_.add_message("✗ Erro: " + e.toStdString(), true);
