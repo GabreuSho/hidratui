@@ -1017,6 +1017,114 @@ value: .word 0xdeadbeef
 }
 
 //////////////////////////////////////////////////
+// Test 34: .word with multiple values
+//////////////////////////////////////////////////
+static bool test_word_multiple_values() {
+    std::cout << "\n=== Test 34: .word with multiple values ===" << std::endl;
+    RV32IMMachine m;
+
+    QString code = R"(
+.data
+vec: .word 2, 4, 4, 3, 6, 1, 3, 4, 64
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    int vecAddr = m.getLabelAddress("vec");
+    if (vecAddr != RV32IMMachine::DATA_BASE) {
+        std::cout << " FAIL: vec addr=0x" << std::hex << vecAddr
+                  << " expected 0x" << RV32IMMachine::DATA_BASE << std::dec << std::endl;
+        return false;
+    }
+
+    uint32_t expected[] = {2, 4, 4, 3, 6, 1, 3, 4, 64};
+    for (int i = 0; i < 9; i++) {
+        uint32_t val = static_cast<uint32_t>(m.getMemoryValue(vecAddr + i * 4)) |
+                       (static_cast<uint32_t>(m.getMemoryValue(vecAddr + i * 4 + 1)) << 8) |
+                       (static_cast<uint32_t>(m.getMemoryValue(vecAddr + i * 4 + 2)) << 16) |
+                       (static_cast<uint32_t>(m.getMemoryValue(vecAddr + i * 4 + 3)) << 24);
+        if (val != expected[i]) {
+            std::cout << " FAIL: vec[" << i << "]=0x" << std::hex << val
+                      << " expected 0x" << expected[i] << std::dec << std::endl;
+            return false;
+        }
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 35: .half with multiple values
+//////////////////////////////////////////////////
+static bool test_half_multiple_values() {
+    std::cout << "\n=== Test 35: .half with multiple values ===" << std::endl;
+    RV32IMMachine m;
+
+    QString code = R"(
+.data
+vec: .half 1, 2, 3, 4, 5
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    int vecAddr = m.getLabelAddress("vec");
+    if (vecAddr != RV32IMMachine::DATA_BASE) {
+        std::cout << " FAIL: vec addr=0x" << std::hex << vecAddr
+                  << " expected 0x" << RV32IMMachine::DATA_BASE << std::dec << std::endl;
+        return false;
+    }
+
+    for (int i = 0; i < 5; i++) {
+        uint16_t val = static_cast<uint16_t>(m.getMemoryValue(vecAddr + i * 2)) |
+                       (static_cast<uint16_t>(m.getMemoryValue(vecAddr + i * 2 + 1)) << 8);
+        if (val != i + 1) {
+            std::cout << " FAIL: vec[" << i << "]=0x" << std::hex << val
+                      << " expected 0x" << (i + 1) << std::dec << std::endl;
+            return false;
+        }
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 36: .byte with multiple values
+//////////////////////////////////////////////////
+static bool test_byte_multiple_values() {
+    std::cout << "\n=== Test 36: .byte with multiple values ===" << std::endl;
+    RV32IMMachine m;
+
+    QString code = R"(
+.data
+vec: .byte 10, 20, 30, 40, 50
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    int vecAddr = m.getLabelAddress("vec");
+    if (vecAddr != RV32IMMachine::DATA_BASE) {
+        std::cout << " FAIL: vec addr=0x" << std::hex << vecAddr
+                  << " expected 0x" << RV32IMMachine::DATA_BASE << std::dec << std::endl;
+        return false;
+    }
+
+    uint8_t expected[] = {10, 20, 30, 40, 50};
+    for (int i = 0; i < 5; i++) {
+        uint8_t val = static_cast<uint8_t>(m.getMemoryValue(vecAddr + i));
+        if (val != expected[i]) {
+            std::cout << " FAIL: vec[" << i << "]=" << (int)val
+                      << " expected " << (int)expected[i] << std::endl;
+            return false;
+        }
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
 // Test 33: All comment styles
 //////////////////////////////////////////////////
 static bool test_comment_styles() {
@@ -1085,6 +1193,9 @@ int main(int argc, char *argv[]) {
     run(test_eqv_equate);
     run(test_space_directive);
     run(test_comment_styles);
+    run(test_word_multiple_values);
+    run(test_half_multiple_values);
+    run(test_byte_multiple_values);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;

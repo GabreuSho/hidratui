@@ -977,6 +977,27 @@ void RV32IMMachine::assemble(QString sourceCode)
         return val;
     };
 
+    // Parse multiple values for .word, .half, .byte directives
+    // Normalizes: replaces commas with spaces, splits by whitespace
+    auto parseDataValues = [&](const QString &args) -> QList<int> {
+        QList<int> values;
+        QString normalized = args;
+        normalized.replace(',', ' ');
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+        QStringList parts = normalized.split(whitespace, Qt::SkipEmptyParts);
+#else
+        QStringList parts = normalized.split(whitespace, QString::SkipEmptyParts);
+#endif
+        for (const QString &part : parts) {
+            bool ok;
+            int val = parseImm(part, ok);
+            if (!ok)
+                throw Machine::invalidValue;
+            values.append(val);
+        }
+        return values;
+    };
+
  // Check if value fits in 12-bit signed immediate
  auto fitsIn12 = [](int val) -> bool {
      return (val >= -2048 && val <= 2047);
@@ -1081,11 +1102,17 @@ void RV32IMMachine::assemble(QString sourceCode)
             if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
             else dataCurrentAddr = currentAddr;
                     } else if (mnemonic == ".word") {
-                advanceSectionAddr1(4);
+                QList<int> vals = parseDataValues(arguments);
+                if (vals.isEmpty()) throw Machine::wrongNumberOfArguments;
+                advanceSectionAddr1(4 * vals.size());
                     } else if (mnemonic == ".half") {
-                advanceSectionAddr1(2);
+                QList<int> vals = parseDataValues(arguments);
+                if (vals.isEmpty()) throw Machine::wrongNumberOfArguments;
+                advanceSectionAddr1(2 * vals.size());
                     } else if (mnemonic == ".byte") {
-                advanceSectionAddr1(1);
+                QList<int> vals = parseDataValues(arguments);
+                if (vals.isEmpty()) throw Machine::wrongNumberOfArguments;
+                advanceSectionAddr1(vals.size());
                     } else if (mnemonic == ".align") {
                 bool ok;
                 int align = parseImm(arguments, ok);
@@ -1200,35 +1227,35 @@ void RV32IMMachine::assemble(QString sourceCode)
                 continue;
             }
             if (mnemonic == ".word") {
-                bool ok;
-                int val = parseImm(arguments, ok);
-                if (!ok)
-                    throw Machine::invalidValue;
-                writeWordToAssembler(currentAddr, static_cast<uint32_t>(val));
-                currentAddr += 4;
+                QList<int> vals = parseDataValues(arguments);
+                if (vals.isEmpty()) throw Machine::wrongNumberOfArguments;
+                for (int val : vals) {
+                    writeWordToAssembler(currentAddr, static_cast<uint32_t>(val));
+                    currentAddr += 4;
+                }
                 if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
                 else dataCurrentAddr = currentAddr;
                 continue;
             }
             if (mnemonic == ".half") {
-                bool ok;
-                int val = parseImm(arguments, ok);
-                if (!ok)
-                    throw Machine::invalidValue;
-                assemblerMemory_[currentAddr] = static_cast<uint8_t>(val & 0xFF);
-                assemblerMemory_[currentAddr + 1] = static_cast<uint8_t>((val >> 8) & 0xFF);
-                currentAddr += 2;
+                QList<int> vals = parseDataValues(arguments);
+                if (vals.isEmpty()) throw Machine::wrongNumberOfArguments;
+                for (int val : vals) {
+                    assemblerMemory_[currentAddr] = static_cast<uint8_t>(val & 0xFF);
+                    assemblerMemory_[currentAddr + 1] = static_cast<uint8_t>((val >> 8) & 0xFF);
+                    currentAddr += 2;
+                }
                 if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
                 else dataCurrentAddr = currentAddr;
                 continue;
             }
             if (mnemonic == ".byte") {
-                bool ok;
-                int val = parseImm(arguments, ok);
-                if (!ok)
-                    throw Machine::invalidValue;
-                assemblerMemory_[currentAddr] = static_cast<uint8_t>(val & 0xFF);
-                currentAddr += 1;
+                QList<int> vals = parseDataValues(arguments);
+                if (vals.isEmpty()) throw Machine::wrongNumberOfArguments;
+                for (int val : vals) {
+                    assemblerMemory_[currentAddr] = static_cast<uint8_t>(val & 0xFF);
+                    currentAddr += 1;
+                }
                 if (section == TEXT_SECTION) textCurrentAddr = currentAddr;
                 else dataCurrentAddr = currentAddr;
                 continue;
