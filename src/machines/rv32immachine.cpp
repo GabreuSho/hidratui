@@ -1605,29 +1605,34 @@ void RV32IMMachine::assemble(QString sourceCode)
      // Check if second arg is a bare label (not offset(base))
      if (args.size() >= 2 && isLabelArg(args[1])) {
          // Load with label: lw rd, label [, aux]
-         // aux register defaults to rd (safe: load overwrites rd anyway)
-         int aux = rd;
+         int aux = rd;  // default aux to rd (safe: load overwrites rd)
          if (args.size() == 3) {
              aux = parseReg(args[2]);
              if (aux < 0) throw Machine::invalidArgument;
          }
-         bool ok;
-         int target = parseImm(args[1], ok);
-         if (!ok) throw Machine::invalidArgument;
-         int offset = target - currentAddr;
-         if (fitsIn12(offset)) {
-             // Optimized: 1 instruction + 1 NOP (8 bytes reserved)
-             writeWordToAssembler(currentAddr, encodeI(offset, 0, funct3, rd, 0x03));
-             writeWordToAssembler(currentAddr + 4, encodeI(0, 0, 0, 0, 0x13));
+
+         // If aux is x0/zero, expand to RARS 3-arg style: lw rd, label, zero -> lw rd, label(zero)
+         if (aux == 0) {
+             args[1] = args[1] + "(zero)";
+             args.removeAt(2);
+             // Fall through to offset(base) parsing below
          } else {
-             // auipc aux, upper; lw rd, lower(aux)
-             int upper = (offset + 0x800) >> 12;
-             int lower = offset - (upper << 12);
-             writeWordToAssembler(currentAddr, encodeU(upper << 12, aux, 0x17));
-             writeWordToAssembler(currentAddr + 4, encodeI(lower, aux, funct3, rd, 0x03));
+             bool ok;
+             int target = parseImm(args[1], ok);
+             if (!ok) throw Machine::invalidArgument;
+             int offset = target - currentAddr;
+             if (fitsIn12(offset)) {
+                 writeWordToAssembler(currentAddr, encodeI(offset, 0, funct3, rd, 0x03));
+                 writeWordToAssembler(currentAddr + 4, encodeI(0, 0, 0, 0, 0x13));
+             } else {
+                 int upper = (offset + 0x800) >> 12;
+                 int lower = offset - (upper << 12);
+                 writeWordToAssembler(currentAddr, encodeU(upper << 12, aux, 0x17));
+                 writeWordToAssembler(currentAddr + 4, encodeI(lower, aux, funct3, rd, 0x03));
+             }
+             advanceSectionAddr(8);
+             continue;
          }
-         advanceSectionAddr(8);
-         continue;
      }
 
      // RARS syntax: lw rd, label, base -> lw rd, label(base)
@@ -1679,23 +1684,29 @@ void RV32IMMachine::assemble(QString sourceCode)
              throw Machine::wrongNumberOfArguments; // need aux register for auipc
          int aux = parseReg(args[2]);
          if (aux < 0) throw Machine::invalidArgument;
-         bool ok;
-         int target = parseImm(args[1], ok);
-         if (!ok) throw Machine::invalidArgument;
-         int offset = target - currentAddr;
-         if (fitsIn12(offset)) {
-             // Optimized: 1 instruction + 1 NOP (8 bytes reserved)
-             writeWordToAssembler(currentAddr, encodeS(offset, rs2, 0, funct3, 0x23));
-             writeWordToAssembler(currentAddr + 4, encodeI(0, 0, 0, 0, 0x13));
+
+         // If aux is x0/zero, expand to RARS 3-arg style: sw src, label, zero -> sw src, label(zero)
+         if (aux == 0) {
+             args[1] = args[1] + "(zero)";
+             args.removeAt(2);
+             // Fall through to offset(base) parsing below
          } else {
-             // auipc aux, upper; sw rs2, lower(aux)
-             int upper = (offset + 0x800) >> 12;
-             int lower = offset - (upper << 12);
-             writeWordToAssembler(currentAddr, encodeU(upper << 12, aux, 0x17));
-             writeWordToAssembler(currentAddr + 4, encodeS(lower, rs2, aux, funct3, 0x23));
+             bool ok;
+             int target = parseImm(args[1], ok);
+             if (!ok) throw Machine::invalidArgument;
+             int offset = target - currentAddr;
+             if (fitsIn12(offset)) {
+                 writeWordToAssembler(currentAddr, encodeS(offset, rs2, 0, funct3, 0x23));
+                 writeWordToAssembler(currentAddr + 4, encodeI(0, 0, 0, 0, 0x13));
+             } else {
+                 int upper = (offset + 0x800) >> 12;
+                 int lower = offset - (upper << 12);
+                 writeWordToAssembler(currentAddr, encodeU(upper << 12, aux, 0x17));
+                 writeWordToAssembler(currentAddr + 4, encodeS(lower, rs2, aux, funct3, 0x23));
+             }
+             advanceSectionAddr(8);
+             continue;
          }
-         advanceSectionAddr(8);
-         continue;
      }
 
      // RARS syntax: sw src, label, base -> sw src, label(base)
@@ -1722,7 +1733,8 @@ void RV32IMMachine::assemble(QString sourceCode)
          }
      }
      if (rs1 < 0) throw Machine::invalidArgument;
-     writeWordToAssembler(currentAddr, encodeS(imm, rs2, rs1, funct3, 0x23));
+     uint32_t instr = encodeS(imm, rs2, rs1, funct3, 0x23);
+     writeWordToAssembler(currentAddr, instr);
      advanceSectionAddr(4);
      continue;
  }
