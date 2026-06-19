@@ -2,7 +2,6 @@
 
 #include <string>
 #include <vector>
-#include <optional>
 
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/component/event.hpp>
@@ -15,7 +14,7 @@ namespace hidra::tui::panels {
 
 struct HelpSection {
     std::string title;
-    std::vector<std::pair<std::string, std::string>> items;  // key, description
+    std::vector<std::pair<std::string, std::string>> items;
 };
 
 class HelpPopup {
@@ -38,17 +37,10 @@ private:
     bool active_ = false;
 
     void build_sections();
-    static std::vector<HelpSection> build_neander_sections();
-    static std::vector<HelpSection> build_ahmes_sections();
-    static std::vector<HelpSection> build_ramses_sections();
-    static std::vector<HelpSection> build_reg_sections();
-    static std::vector<HelpSection> build_volta_sections();
-    static std::vector<HelpSection> build_pitagoras_sections();
-    static std::vector<HelpSection> build_cromag_sections();
-    static std::vector<HelpSection> build_pericles_sections();
-    static std::vector<HelpSection> build_queops_sections();
-    static std::vector<HelpSection> build_rv32im_sections();
-    static std::vector<HelpSection> build_generic_sections();
+    void navigate_section(int delta);
+    void ensure_selection_visible();
+    ftxui::Element render_section(const HelpSection& section, bool selected) const;
+    ftxui::Element render_section_compact(const HelpSection& section, bool selected) const;
 };
 
 }  // namespace hidra::tui::panels
