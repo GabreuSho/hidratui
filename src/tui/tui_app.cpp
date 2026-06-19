@@ -209,6 +209,13 @@ void TuiApp::run() {
     }
 
     // 2. SIMULAÇÃO: Executa 1 passo a cada step_interval_ (ex: 100ms)
+
+    // Verifica se a máquina parou internamente (ECALL/EBREAK) mas running_ ainda está true
+    if (running_ && machine_ && !machine_->isRunning()) {
+        running_ = false;
+        running_steps_ = 0;
+    }
+
     if (running_ && machine_ && machine_->isRunning() &&
         ((this->running_steps_ > 0) || (running_steps_ == -1))) {
       auto now = steady_clock::now();
