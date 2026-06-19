@@ -21,6 +21,7 @@
 #include "tui/layout.h"
 #include "tui/panels/controls_panel.h"
 #include "tui/panels/goto_popup.h"
+#include "tui/panels/help_popup.h"
 #include "tui/panels/memory_panel.h"
 #include "tui/panels/output_panel.h"
 #include "tui/panels/registers_panel.h"
@@ -48,6 +49,7 @@ TuiApp::TuiApp(const std::string& machine_type) : machine_type_(machine_type) {
   registers_panel_.set_machine(machine_.get());
   registers_panel_.set_machine_type(machine_type);
   goto_popup_.set_machine(machine_.get());
+  help_popup_.set_machine_type(machine_type);
 
   controls_panel_.add_action({"uild", 'b', [this]() { do_build(); }});
   controls_panel_.add_action({"tep", 's', [this]() { do_step(); }});
@@ -161,6 +163,22 @@ void TuiApp::do_reset_pc() {
   }
 }
 
+void TuiApp::increase_speed() {
+  if (step_interval_.count() > MIN_STEP_INTERVAL) {
+    step_interval_ -= std::chrono::milliseconds(STEP_INTERVAL_STEP);
+    if (step_interval_.count() < MIN_STEP_INTERVAL)
+      step_interval_ = std::chrono::milliseconds(MIN_STEP_INTERVAL);
+  }
+}
+
+void TuiApp::decrease_speed() {
+  if (step_interval_.count() < MAX_STEP_INTERVAL) {
+    step_interval_ += std::chrono::milliseconds(STEP_INTERVAL_STEP);
+    if (step_interval_.count() > MAX_STEP_INTERVAL)
+      step_interval_ = std::chrono::milliseconds(MAX_STEP_INTERVAL);
+  }
+}
+
 void TuiApp::run() {
   auto screen = ScreenInteractive::Fullscreen();
   last_step_time_ = steady_clock::now();
@@ -227,6 +245,30 @@ void TuiApp::run() {
   // ============================================================================
   auto main_component = CatchEvent(renderer, [this, &screen,
                                               &timer_active](Event event) {
+    // Help popup está ativo - delega eventos para ele
+    if (help_popup_.is_active()) {
+      // Ignora o evento "dummy" do timer (espaço)
+      if (event == Event::Character(' ')) {
+        return true;
+      }
+
+      // ? ou Escape -> fecha ajuda
+      if (event == Event::Character('?') || event == Event::Escape) {
+        help_popup_.close();
+        return true;
+      }
+
+      // Outros eventos vão para o popup
+      help_popup_.handle_key(event);
+      return true;
+    }
+
+    // ? -> abre popup de ajuda
+    if (event == Event::Character('?')) {
+      help_popup_.open();
+      return true;
+    }
+
     // Goto popup está ativo - delega eventos para ele
     if (goto_popup_.is_active()) {
       // Ignora o evento "dummy" do timer (espaço)
@@ -315,6 +357,12 @@ void TuiApp::run() {
           return true;
         case '0':
           this->address_running_aux_ = (this->address_running_aux_ * 10) + 0;
+          return true;
+        case '+':  // Aumentar velocidade
+          increase_speed();
+          return true;
+        case '-':  // Diminuir velocidade
+          decrease_speed();
           return true;
         case 'r':  // Run/Stop toggle
           if (address_running_aux_ > 0) {
@@ -469,6 +517,14 @@ Element TuiApp::render() {
     return dbox(elements);
   }
 
+  // Mostra popup de ajuda por cima do layout principal
+  if (help_popup_.is_active()) {
+    Elements elements;
+    elements.push_back(main_content | dim);
+    elements.push_back(center(clear_under(help_popup_.render())));
+    return dbox(elements);
+  }
+
   return main_content;
 }
 
@@ -483,9 +539,18 @@ Element TuiApp::render_header() {
 }
 
 Element TuiApp::render_status_bar() {
-  return hidra::tui::compose_status_bar(
-      layout_config_.show_hex ? "HEX" : "DEC",
-      file_modified_ ? "MODIFICADO (auto-recarregando)" : "sincronizado");
+  std::string hex_dec = layout_config_.show_hex ? "HEX" : "DEC";
+  std::string speed = "Velocidade: " + std::to_string(get_step_interval_ms()) + "ms";
+  std::string file_status = file_modified_ ? "MODIFICADO (auto-recarregando)" : "sincronizado";
+
+  return vbox({
+      hidra::tui::compose_status_bar(hex_dec, file_status),
+      hbox({
+          text(" [+]Mais rápido ") | color(Color::Green),
+          text(" [-]Mais lento ") | color(Color::Yellow),
+          text(" " + speed) | color(Color::Cyan),
+      }),
+  }) | size(HEIGHT, LESS_THAN, 3);
 }
 
 Element TuiApp::render_controls_panel() {
