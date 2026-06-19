@@ -10,6 +10,7 @@
 #include "tui/layout.h"
 #include "tui/panels/controls_panel.h"
 #include "tui/panels/goto_popup.h"
+#include "tui/panels/help_popup.h"
 #include "tui/panels/memory_panel.h"
 #include "tui/panels/output_panel.h"
 #include "tui/panels/registers_panel.h"
@@ -47,12 +48,21 @@ class TuiApp {
   std::chrono::steady_clock::time_point last_step_time_;
   std::chrono::milliseconds step_interval_{50};
 
+  static constexpr int MIN_STEP_INTERVAL = 5;
+  static constexpr int MAX_STEP_INTERVAL = 500;
+  static constexpr int STEP_INTERVAL_STEP = 10;
+
+  int get_step_interval_ms() const { return step_interval_.count(); }
+  void increase_speed();
+  void decrease_speed();
+
   // Painéis da UI
   hidra::tui::panels::MemoryPanel memory_panel_;
   hidra::tui::panels::RegistersPanel registers_panel_;
   hidra::tui::panels::OutputPanel output_panel_;
   hidra::tui::panels::ControlsPanel controls_panel_;
   hidra::tui::panels::GotoPopup goto_popup_;
+  hidra::tui::panels::HelpPopup help_popup_;
   hidra::tui::LayoutConfig layout_config_;
 
   void on_file_changed();
