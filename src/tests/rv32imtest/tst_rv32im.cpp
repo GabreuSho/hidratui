@@ -1090,7 +1090,102 @@ vec: .half 1, 2, 3, 4, 5
 }
 
 //////////////////////////////////////////////////
-// Test 36: .byte with multiple values
+// Test 36: sw/lw with base register (integration test)
+//////////////////////////////////////////////////
+static bool test_sw_lw_integration() {
+    std::cout << "\n=== Test 36: sw/lw with base register ===" << std::endl;
+
+    // Test 1: Basic lw with label and base register
+    RV32IMMachine m1;
+    QString code1 = R"(
+.data
+valor: .word 42
+.text
+la t1 valor
+lw t0 0(t1)
+ebreak
+)";
+    m1.assemble(code1);
+    if (!m1.getBuildSuccessful()) {
+        std::cout << " FAIL: build test 1\n";
+        return false;
+    }
+    m1.setRunning(true);
+    while (m1.isRunning()) m1.step();
+    int t0_val = m1.getRegisterValueByName("t0");
+    std::cout << "Test 1 - la t1 valor; lw t0 0(t1): t0=" << t0_val << std::endl;
+    if (t0_val != 42) {
+        std::cout << " FAIL: expected 42, got " << t0_val << std::endl;
+        return false;
+    }
+
+    // Test 2: Basic sw with label and base register
+    RV32IMMachine m2;
+    QString code2 = R"(
+.data
+resultado: .word 0
+.text
+la t1 resultado
+li t0 123
+sw t0 0(t1)
+ebreak
+)";
+    m2.assemble(code2);
+    if (!m2.getBuildSuccessful()) {
+        std::cout << " FAIL: build test 2\n";
+        return false;
+    }
+    m2.setRunning(true);
+    while (m2.isRunning()) m2.step();
+    uint32_t resultado = m2.memoryReadWord(m2.getLabelAddress("resultado"));
+    std::cout << "Test 2 - la t1 resultado; li t0 123; sw t0 0(t1): resultado=" << resultado << std::endl;
+    if (resultado != 123) {
+        std::cout << " FAIL: expected 123, got " << resultado << std::endl;
+        return false;
+    }
+
+    // Test 3: Array processing with lw/sw using base register
+    RV32IMMachine m3;
+    QString code3 = R"(
+.data
+valores: .word 10, 20, 30, 40, 50
+
+.text
+la t0 valores    # t0 = base of array
+lw t1 0(t0)      # t1 = first value (10)
+addi t0 t0 4     # t0 = next element
+lw t2 0(t0)      # t2 = second value (20)
+add t1 t1 t2     # t1 = 30
+sw t1 -4(t0)     # Store 30 at first position
+ebreak
+)";
+    m3.assemble(code3);
+    if (!m3.getBuildSuccessful()) {
+        std::cout << " FAIL: build test 3\n";
+        return false;
+    }
+    m3.setRunning(true);
+    while (m3.isRunning()) m3.step();
+    int t1_after = m3.getRegisterValueByName("t1");
+    int t2_after = m3.getRegisterValueByName("t2");
+    uint32_t valores0 = m3.memoryReadWord(m3.getLabelAddress("valores"));
+    std::cout << "Test 3 - lw/sw with base: t1=" << t1_after << " t2=" << t2_after
+              << " valores[0]=" << valores0 << std::endl;
+    if (t1_after != 30) {
+        std::cout << " FAIL: expected t1=30, got " << t1_after << std::endl;
+        return false;
+    }
+    if (valores0 != 30) {
+        std::cout << " FAIL: expected valores[0]=30, got " << valores0 << std::endl;
+        return false;
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 37: .byte with multiple values
 //////////////////////////////////////////////////
 static bool test_byte_multiple_values() {
     std::cout << "\n=== Test 36: .byte with multiple values ===" << std::endl;
@@ -1195,6 +1290,7 @@ int main(int argc, char *argv[]) {
     run(test_comment_styles);
     run(test_word_multiple_values);
     run(test_half_multiple_values);
+    run(test_sw_lw_integration);
     run(test_byte_multiple_values);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
