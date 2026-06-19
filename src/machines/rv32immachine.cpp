@@ -413,10 +413,14 @@ bool RV32IMMachine::isValidAddress(QString addressString)
     bool ok;
     int value;
     addressString = addressString.trimmed();
-    if (addressString.startsWith("0x", Qt::CaseInsensitive))
+    if (addressString.startsWith("-0x", Qt::CaseInsensitive) || addressString.startsWith("-0X", Qt::CaseInsensitive)) {
+        // Negative hex: -0x10
+        value = -addressString.mid(3).toInt(&ok, 16);
+    } else if (addressString.startsWith("0x", Qt::CaseInsensitive)) {
         value = addressString.toInt(&ok, 16);
-    else
+    } else {
         value = addressString.toInt(&ok, 10);
+    }
     if (!ok) return false;
     return true;
 }
@@ -426,10 +430,14 @@ bool RV32IMMachine::isValidOrg(QString offsetString)
     bool ok;
     int value;
     offsetString = offsetString.trimmed();
-    if (offsetString.startsWith("0x", Qt::CaseInsensitive))
+    if (offsetString.startsWith("-0x", Qt::CaseInsensitive) || offsetString.startsWith("-0X", Qt::CaseInsensitive)) {
+        // Negative hex: -0x10
+        value = -offsetString.mid(3).toInt(&ok, 16);
+    } else if (offsetString.startsWith("0x", Qt::CaseInsensitive)) {
         value = offsetString.toInt(&ok, 16);
-    else
+    } else {
         value = offsetString.toInt(&ok, 10);
+    }
     if (!ok) return false;
     return (value % 4 == 0);
 }
@@ -967,6 +975,12 @@ void RV32IMMachine::assemble(QString sourceCode)
         // Check equates (.eqv defined constants)
         if (equates_.contains(t.toLower()))
             return equates_[t.toLower()];
+        // Check for negative hex: -0x10
+        if (t.startsWith("-0x", Qt::CaseInsensitive) || t.startsWith("-0X", Qt::CaseInsensitive)) {
+            uint val = t.mid(3).toUInt(&ok, 16);
+            if (!ok) { ok = false; return 0; }
+            return -static_cast<int>(val);
+        }
         if (t.startsWith("0x", Qt::CaseInsensitive)) {
             uint val = t.toUInt(&ok, 16);
             if (!ok) { ok = false; return 0; }
@@ -1031,10 +1045,14 @@ void RV32IMMachine::assemble(QString sourceCode)
          QString immStr = parts.size() >= 2 ? parts.last().trimmed() : arguments.trimmed();
          bool ok;
          int val;
-         if (immStr.startsWith("0x", Qt::CaseInsensitive))
+         if (immStr.startsWith("-0x", Qt::CaseInsensitive) || immStr.startsWith("-0X", Qt::CaseInsensitive)) {
+             // Negative hex: -0x10
+             val = -static_cast<int>(immStr.mid(3).toUInt(&ok, 16));
+         } else if (immStr.startsWith("0x", Qt::CaseInsensitive)) {
              val = static_cast<int>(immStr.mid(2).toUInt(&ok, 16));
-         else
+         } else {
              val = immStr.toInt(&ok, 10);
+         }
          if (ok && fitsIn12(val))
              return 4;
          return 8;
@@ -1151,10 +1169,14 @@ void RV32IMMachine::assemble(QString sourceCode)
             throw Machine::invalidLabel;
         bool ok;
         int value;
-        if (valueStr.startsWith("0x", Qt::CaseInsensitive))
+        if (valueStr.startsWith("-0x", Qt::CaseInsensitive) || valueStr.startsWith("-0X", Qt::CaseInsensitive)) {
+            // Negative hex: -0x10
+            value = -valueStr.mid(3).toInt(&ok, 16);
+        } else if (valueStr.startsWith("0x", Qt::CaseInsensitive)) {
             value = valueStr.mid(2).toInt(&ok, 16);
-        else
+        } else {
             value = valueStr.toInt(&ok, 10);
+        }
         if (!ok)
             throw Machine::invalidValue;
         equates_.insert(name.toLower(), value);
