@@ -1248,6 +1248,163 @@ ecall; Comment with semicolon
     return true;
 }
 
+//////////////////////////////////////////////////
+// Test 38: Negative hex values with li
+//////////////////////////////////////////////////
+static bool test_negative_hex_li() {
+    std::cout << "\n=== Test 38: Negative hex values (li) ===" << std::endl;
+    RV32IMMachine m;
+
+    QString code = R"(
+li t0, -0x10
+li t1, -0xFF
+li t2, -0x100
+ecall
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    m.updateInstructionStrings();
+    runSteps(m);
+
+    if (m.getRegisterValueByName("t0") != -16) {
+        std::cout << " FAIL: t0=" << m.getRegisterValueByName("t0") << " expected -16\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t1") != -255) {
+        std::cout << " FAIL: t1=" << m.getRegisterValueByName("t1") << " expected -255\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t2") != -256) {
+        std::cout << " FAIL: t2=" << m.getRegisterValueByName("t2") << " expected -256\n";
+        return false;
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 39: Negative hex in arithmetic
+//////////////////////////////////////////////////
+static bool test_negative_hex_arithmetic() {
+    std::cout << "\n=== Test 39: Negative hex arithmetic ===" << std::endl;
+    RV32IMMachine m;
+
+    QString code = R"(
+li t0, -0x10
+li t1, 0x10
+add t2, t0, t1
+sub t3, t0, t1
+ecall
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    m.updateInstructionStrings();
+    runSteps(m);
+
+    if (m.getRegisterValueByName("t2") != 0) {
+        std::cout << " FAIL: t2=" << m.getRegisterValueByName("t2") << " expected 0\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t3") != -32) {
+        std::cout << " FAIL: t3=" << m.getRegisterValueByName("t3") << " expected -32\n";
+        return false;
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 40: Negative hex with .eqv equate
+//////////////////////////////////////////////////
+static bool test_negative_hex_eqv() {
+    std::cout << "\n=== Test 40: Negative hex in .eqv ===" << std::endl;
+    RV32IMMachine m;
+
+    QString code = R"(
+.eqv MASK -0xFF
+li t0, MASK
+li t1, -0x100
+add t2, t0, t1
+ecall
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    m.updateInstructionStrings();
+    runSteps(m);
+
+    if (m.getRegisterValueByName("t0") != -255) {
+        std::cout << " FAIL: t0=" << m.getRegisterValueByName("t0") << " expected -255\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t1") != -256) {
+        std::cout << " FAIL: t1=" << m.getRegisterValueByName("t1") << " expected -256\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t2") != -511) {
+        std::cout << " FAIL: t2=" << m.getRegisterValueByName("t2") << " expected -511\n";
+        return false;
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
+//////////////////////////////////////////////////
+// Test 41: Mixed positive and negative hex
+//////////////////////////////////////////////////
+static bool test_mixed_hex() {
+    std::cout << "\n=== Test 41: Mixed hex values ===" << std::endl;
+    RV32IMMachine m;
+
+    QString code = R"(
+li t0, 0x100
+li t1, -0x100
+li t2, 0xFF
+li t3, -0xFF
+li t4, 0x1000
+li t5, -0x1000
+ecall
+)";
+    m.assemble(code);
+    if (!m.getBuildSuccessful()) { std::cout << " FAIL: build\n"; return false; }
+
+    m.updateInstructionStrings();
+    runSteps(m);
+
+    if (m.getRegisterValueByName("t0") != 256) {
+        std::cout << " FAIL: t0=" << m.getRegisterValueByName("t0") << " expected 256\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t1") != -256) {
+        std::cout << " FAIL: t1=" << m.getRegisterValueByName("t1") << " expected -256\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t2") != 255) {
+        std::cout << " FAIL: t2=" << m.getRegisterValueByName("t2") << " expected 255\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t3") != -255) {
+        std::cout << " FAIL: t3=" << m.getRegisterValueByName("t3") << " expected -255\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t4") != 4096) {
+        std::cout << " FAIL: t4=" << m.getRegisterValueByName("t4") << " expected 4096\n";
+        return false;
+    }
+    if (m.getRegisterValueByName("t5") != -4096) {
+        std::cout << " FAIL: t5=" << m.getRegisterValueByName("t5") << " expected -4096\n";
+        return false;
+    }
+
+    std::cout << " PASS" << std::endl;
+    return true;
+}
+
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     std::cout << "\n=== RV32IM Test Suite ===\n" << std::endl;
@@ -1292,6 +1449,10 @@ int main(int argc, char *argv[]) {
     run(test_half_multiple_values);
     run(test_sw_lw_integration);
     run(test_byte_multiple_values);
+    run(test_negative_hex_li);
+    run(test_negative_hex_arithmetic);
+    run(test_negative_hex_eqv);
+    run(test_mixed_hex);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===\n" << std::endl;
     return failed > 0 ? 1 : 0;
