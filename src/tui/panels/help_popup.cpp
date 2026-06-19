@@ -6,7 +6,10 @@ using namespace ftxui;
 
 namespace {
 
-constexpr int MAX_VISIBLE_SECTIONS = 15;
+constexpr int VISIBLE_LINES = 18;
+constexpr int COMPACT_SECTION_HEIGHT = 1;
+const std::string BAR_SELECTED = "█";
+const std::string BAR_AVAILABLE = "░";
 
 std::vector<hidra::tui::panels::HelpSection> build_keybindings_section() {
     return {
@@ -436,6 +439,13 @@ static std::vector<hidra::tui::panels::HelpSection> build_generic_sections() {
     return result;
 }
 
+int get_section_display_height(const hidra::tui::panels::HelpSection& section, bool expanded) {
+    if (expanded) {
+        return 1 + static_cast<int>(section.items.size());
+    }
+    return COMPACT_SECTION_HEIGHT;
+}
+
 }  // anonymous namespace
 
 namespace hidra::tui::panels {
@@ -497,37 +507,58 @@ void HelpPopup::handle_key(const ftxui::Event& event) {
     }
 
     if (event == Event::ArrowUp) {
-        if (selected_section_ > 0) {
-            selected_section_--;
-            if (selected_section_ < scroll_offset_) {
-                scroll_offset_ = selected_section_;
-            }
-        }
+        navigate_section(-1);
         return;
     }
 
     if (event == Event::ArrowDown) {
-        if (selected_section_ < static_cast<int>(sections_.size()) - 1) {
-            selected_section_++;
-            if (selected_section_ >= scroll_offset_ + MAX_VISIBLE_SECTIONS) {
-                scroll_offset_ = selected_section_ - MAX_VISIBLE_SECTIONS + 1;
-            }
-        }
+        navigate_section(1);
         return;
     }
 
     if (event == Event::PageUp) {
-        scroll_offset_ = std::max(0, scroll_offset_ - 5);
-        selected_section_ = std::min(selected_section_, scroll_offset_);
+        navigate_section(-5);
         return;
     }
 
     if (event == Event::PageDown) {
-        scroll_offset_ = std::min(
-            static_cast<int>(sections_.size()) - MAX_VISIBLE_SECTIONS,
-            scroll_offset_ + 5);
-        selected_section_ = std::max(selected_section_, scroll_offset_);
+        navigate_section(5);
         return;
+    }
+}
+
+void HelpPopup::navigate_section(int delta) {
+    if (sections_.empty()) return;
+
+    int new_selected = selected_section_ + delta;
+
+    if (new_selected < 0) {
+        new_selected = 0;
+    } else if (new_selected >= static_cast<int>(sections_.size())) {
+        new_selected = sections_.size() - 1;
+    }
+
+    selected_section_ = new_selected;
+
+    ensure_selection_visible();
+}
+
+void HelpPopup::ensure_selection_visible() {
+    int current_line = 0;
+
+    for (int i = 0; i < selected_section_; ++i) {
+        current_line += get_section_display_height(sections_[i], false);
+    }
+
+    bool selected_expanded = true;
+    int selected_height = get_section_display_height(sections_[selected_section_], selected_expanded);
+
+    int content_height = current_line + selected_height;
+
+    if (current_line < scroll_offset_) {
+        scroll_offset_ = current_line;
+    } else if (content_height > scroll_offset_ + VISIBLE_LINES) {
+        scroll_offset_ = content_height - VISIBLE_LINES;
     }
 }
 
@@ -542,48 +573,99 @@ Element HelpPopup::render() const {
     Elements content;
 
     content.push_back(
-        text(" AJUDA - Pressione ? ou ESC para fechar ") | bold | color(Color::Cyan) | inverted
+        text(" AJUDA - ? ou ESC fecha ") | bold | color(Color::Cyan) | inverted
     );
 
-    int end_idx = std::min(scroll_offset_ + MAX_VISIBLE_SECTIONS,
-                           static_cast<int>(sections_.size()));
+    int current_line = 0;
+    int display_line = 0;
+    Elements visible_content;
+    std::vector<std::string> bar_markers;
 
-    for (int i = scroll_offset_; i < end_idx; ++i) {
-        const auto& section = sections_[i];
+    for (int i = 0; i < static_cast<int>(sections_.size()) && display_line < VISIBLE_LINES; ++i) {
+        bool is_selected = (i == selected_section_);
 
-        if (i == selected_section_) {
-            content.push_back(text(""));
-            content.push_back(text("> " + section.title) | bold | color(Color::Yellow));
-        } else {
-            content.push_back(text(""));
-            content.push_back(text("  " + section.title) | bold | color(Color::Cyan));
+        int section_height = get_section_display_height(sections_[i], is_selected);
+
+        bool starts_in_view = (current_line >= scroll_offset_);
+        bool ends_in_view = (current_line + section_height <= scroll_offset_ + VISIBLE_LINES);
+
+        bar_markers.push_back(is_selected ? BAR_SELECTED : BAR_AVAILABLE);
+
+        if (!starts_in_view) {
+            current_line += section_height;
+            continue;
         }
 
-        for (const auto& [key, desc] : section.items) {
-            std::string line = "    ";
-            if (i == selected_section_) {
-                line += "[";
-                line += key;
-                line += "] ";
-                line += desc;
-                content.push_back(text(line) | color(Color::White));
-            } else {
-                line += key;
-                line += " ";
-                line += desc;
-                content.push_back(text(line) | dim);
-            }
+        if (!ends_in_view && current_line + section_height > scroll_offset_ + VISIBLE_LINES) {
+            int visible_lines = scroll_offset_ + VISIBLE_LINES - current_line;
+            visible_content.push_back(render_section_compact(sections_[i], is_selected));
+            display_line++;
+            current_line += section_height;
+
+            if (display_line >= VISIBLE_LINES) break;
+            continue;
         }
+
+        visible_content.push_back(render_section(sections_[i], is_selected));
+        display_line++;
+        current_line += section_height;
     }
 
-    content.push_back(text(""));
-
-    std::string nav_hint = " [↑↓] Navegar  [PgUp/PgDn] Page  [?] ou [Esc] Fechar ";
-    if (sections_.size() > 1) {
-        content.push_back(text(nav_hint) | dim);
+    while (display_line < VISIBLE_LINES && bar_markers.size() < static_cast<size_t>(sections_.size())) {
+        bar_markers.push_back(BAR_AVAILABLE);
+        display_line++;
     }
+
+    Element bar_element = text("");
+    if (!bar_markers.empty()) {
+        std::string bar_str;
+        for (const auto& marker : bar_markers) {
+            bar_str += marker + "\n";
+        }
+        bar_element = text(bar_str) | color(Color::GrayDark);
+    }
+
+    Element main_content = vbox(visible_content);
+
+    content.push_back(hbox({
+        main_content | flex,
+        bar_element,
+    }) | flex);
+
+    std::string pos_str = std::to_string(selected_section_ + 1) + "/" + std::to_string(sections_.size());
+    content.push_back(text(" [↑↓] Navegar  [PgUp/PgDn] Page  [?] ou [Esc] Fechar  " + pos_str) | dim);
 
     return vbox(content) | border | bold | color(Color::Cyan);
+}
+
+Element HelpPopup::render_section(const HelpSection& section, bool selected) const {
+    Elements lines;
+
+    if (selected) {
+        lines.push_back(text("▶ " + section.title) | bold | color(Color::Yellow));
+    } else {
+        lines.push_back(text("  " + section.title) | bold | color(Color::Cyan));
+    }
+
+    if (selected) {
+        for (const auto& [key, desc] : section.items) {
+            std::string line = "   [";
+            line += key;
+            line += "] ";
+            line += desc;
+            lines.push_back(text(line) | color(Color::White));
+        }
+    }
+
+    return vbox(lines);
+}
+
+Element HelpPopup::render_section_compact(const HelpSection& section, bool selected) const {
+    if (selected) {
+        return text("▶ " + section.title) | bold | color(Color::Yellow);
+    } else {
+        return text("  " + section.title) | bold | color(Color::Cyan);
+    }
 }
 
 }  // namespace hidra::tui::panels
